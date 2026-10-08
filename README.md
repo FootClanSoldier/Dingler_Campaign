@@ -1,5 +1,7 @@
 # Dingler
 
+> **`Campaign` branch:** Work in progress to restore the original HEX PvE campaign in [Blitzkind/Dingler](https://github.com/Blitzkind/Dingler).
+
 ## Information
 A server emulator for Hex: Shards of Fate written in C# that attempts to mimic how it ran prior to its shutdown.
 
