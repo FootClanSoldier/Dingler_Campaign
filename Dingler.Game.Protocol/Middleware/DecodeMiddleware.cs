@@ -1,4 +1,4 @@
-extern alias HexGame;
+﻿extern alias HexGame;
 using System.Text.Json;
 using Dingler.Server;
 using Dingler.Server.Abstractions;
@@ -6,6 +6,7 @@ using Dingler.Server.Pipeline;
 using Dingler.Game.Protocol.Chat;
 using Dingler.Game.Protocol.Messages.Args;
 using Dingler.Game.Protocol.Messages.Requests;
+using HexGame::Game.Shared.Cluster;
 using HexGame::Game.Shared.Network;
 using HexGame::Game.Shared.Utils;
 
@@ -65,7 +66,21 @@ public sealed class DecodeMiddleware : IMiddleware<RequestContext>
 				wrapper.Bytes = Compressor.Decompress(wrapper.Bytes);
 			}
 
-			context.RequestObject = EncData.Decode(wrapper.Bytes);
+			var decoded = EncData.Decode(wrapper.Bytes);
+
+			// ClusterComms.EnvelopeS is a generic shared-service routing envelope.
+			// Only intercept the ServiceCampaign shared-instance pick handshake;
+			// other ClusterComms traffic must keep its existing routing behavior.
+			if (decoded is ClusterComms.EnvelopeS clusterEnvelope
+			    && string.Equals(header.Target, "ServiceCampaign", StringComparison.OrdinalIgnoreCase)
+			    && string.Equals(header.Instance, "Shared", StringComparison.OrdinalIgnoreCase))
+			{
+				context.RequestObject = new ServiceCampaignClusterEnvelopeRequest(clusterEnvelope);
+			}
+			else
+			{
+				context.RequestObject = decoded;
+			}
 		}
 
 		await next(context, token)

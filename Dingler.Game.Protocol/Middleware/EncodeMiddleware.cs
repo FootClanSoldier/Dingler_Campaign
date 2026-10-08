@@ -1,4 +1,4 @@
-
+﻿
 extern alias HexGame;
 
 using System.Diagnostics;
@@ -17,6 +17,7 @@ using Dingler.Game.Protocol.Messages.Json;
 using Dingler.Game.Protocol.Messages.Metadata;
 using Dingler.Game.Protocol.Rooms.Models;
 using HexGame::Game.Shared.Mail.Messages;
+using HexGame::Game.Shared.Campaign.Messages;
 using HexGame::Game.Shared.Network;
 using HexGame::Game.Shared.Network.Campaign;
 using HexGame::Game.Shared.Network.Escrow;
@@ -59,6 +60,10 @@ public sealed class EncodeMiddleware : IMiddleware<RequestContext>
 		{typeof(RoomListFrame), IssuerIdentifiers.Session.SESSION},
 		{typeof(Mail.GetUnreadMailCount.Request), IssuerIdentifiers.Mail.UNREAD_MAIL_RESPONSE},
 		{typeof(ProfileStreamEventArgs), IssuerIdentifiers.Profile.STREAM_PROFILE_INFO},
+		// Campaign notifications are server-initiated CampSysGeneral.Request objects.
+		// The original wire issuer historically uses the ServiceMail.0 UID (252)
+		// in the ServiceCampaign path; keeping six segments also selects ObjFmt.
+		{typeof(CampSysGeneral.Request), "0.0.0.0.ServiceCampaign.252"},
 	};	
 	
 	private static readonly Dictionary<Type, string> TargetTypeMap = new()
@@ -69,16 +74,18 @@ public sealed class EncodeMiddleware : IMiddleware<RequestContext>
 		{typeof(RawChatRequest), "chat"},
 		{typeof(RoomData), "chat"},
 		{typeof(RoomListFrame), "chat"},
+		{typeof(CampSysGeneral.Request), "ServiceCampaign"},
 	};
 
 	private static readonly Dictionary<Type, string> InstanceTypeMap = new()
 	{
-
+		{typeof(CampSysGeneral.Request), "Shared"},
 	};
 	
 	// Events. These are server initiated with no real way to map if there was client request that spawned it
-	private static readonly Dictionary<Type, int> EventTypeMap = new(capacity: 74)
+	private static readonly Dictionary<Type, int> EventTypeMap = new(capacity: 75)
 	{
+		{ typeof(CampSysGeneral.Request), 110000 },
 		{ typeof(NewMailReceivedEventArgs), 9005 },
 		{ typeof(ArenaRefreshEventArgs), 10045 },
 		{ typeof(LootUpdateEventArgs), 10046 },

@@ -8,6 +8,7 @@ using Dingler.Data.Context;
 using Dingler.Data.Repositories;
 using Dingler.Data.Sqlite;
 using Dingler.Game.Configuration;
+using Dingler.Game.Campaign;
 using Dingler.Game.GameObjects;
 using Dingler.Game.GameObjects.TrackedGameZones;
 using Dingler.Game.Games;
@@ -55,6 +56,31 @@ namespace Dingler.Game.CompositionRoot
                 sc.AddSingleton(arenaRunStore);
                 sc.AddSingleton<Dingler.Game.Arena.ArenaBattleService>();
 
+                // PvE campaign phase 1: persistent starter-panorama state + generic ServiceCampaign handler.
+                // Keep this isolated from ArenaBattleService/HexRulesEngine until the client-side campaign flow is proven.
+                var campaignStorePath = hb.Configuration["Campaign:StorePath"] is { Length: > 0 } configuredCampaignPath
+                    ? configuredCampaignPath
+                    : Path.Combine(AppContext.BaseDirectory, "data", "campaign");
+                var campaignDefaultRace = int.TryParse(hb.Configuration["Campaign:DefaultRace"], out var configuredRace)
+                    && configuredRace is >= 1 and <= 8 ? configuredRace : 1;
+                var campaignOptions = new CampaignOptions
+                {
+                    StorePath = campaignStorePath,
+                    DefaultRace = campaignDefaultRace,
+                    BootstrapChampion = bool.TryParse(hb.Configuration["Campaign:BootstrapChampion"], out var bootstrapChampion)
+                                        && bootstrapChampion,
+                    BootstrapChampionName = hb.Configuration["Campaign:BootstrapChampionName"] is { Length: > 0 } championName
+                        ? championName : "CampaignTest",
+                    BootstrapChampionClass = int.TryParse(hb.Configuration["Campaign:BootstrapChampionClass"], out var championClass)
+                        ? championClass : 3,
+                    BootstrapChampionGender = int.TryParse(hb.Configuration["Campaign:BootstrapChampionGender"], out var championGender)
+                        ? championGender : 1,
+                };
+                var campaignRunStore = new CampaignRunStore(campaignOptions.StorePath);
+                sc.AddSingleton(campaignOptions);
+                sc.AddSingleton(campaignRunStore);
+                sc.AddSingleton<CampaignService>();
+
                 // Deck import from the Hex Codex deck builder: the site's data folder (ids.json, gems.json) and the inbox.
                 sc.AddSingleton(new Dingler.Game.DeckImport.DeckImportOptions
                 {
@@ -64,7 +90,8 @@ namespace Dingler.Game.CompositionRoot
                         : Path.Combine(AppContext.BaseDirectory, "data", "deck-inbox"),
                 });
 
-                sc.AddSingletonStartupService(_ => new CollectionCacheService(gameDataLocation, arenaRunStore))
+                sc.AddSingletonStartupService(_ => new CollectionCacheService(
+                        gameDataLocation, arenaRunStore, campaignOptions, campaignRunStore))
                     .AddHttpClient("AuthClient", (sp, client) =>
                     {
                         var auth = sp.GetRequiredService<IOptions<AuthOptions>>().Value;
@@ -125,7 +152,7 @@ namespace Dingler.Game.CompositionRoot
                 {
                     idleTimeoutSeconds = 120;
                 }
-                
+
                 options.Url = IPAddress.Parse(url);
                 options.Port = port;
                 options.IdleTimeoutSeconds = idleTimeoutSeconds;
