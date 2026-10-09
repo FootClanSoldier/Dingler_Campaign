@@ -231,7 +231,6 @@ public sealed class GameManager : IDisposable
 		var wrapper = new HexGameWrapper(engine, new CardVisibilityManager(), _sessionManager, gameCts.Token,
 			_loggerFactory?.CreateLogger<HexGameWrapper>(), CleanupMatch);
 		wrapper.BindNetworkSession(humanId, userName);
-		engine.GameEnded += (winners, losers) => onGameEnded(engine, winners, losers);
 
 		var human = new TrackedPlayer(new PlayerState { PlayerId = humanId, PlayerPosition = 0 }, UID.Invalid);
 		var ai = new TrackedPlayer(new PlayerState { PlayerId = aiId, PlayerPosition = 1 }, UID.Invalid);
@@ -262,10 +261,41 @@ public sealed class GameManager : IDisposable
 
 		_runningMatches[gameId] = wrapper;
 		_gamePlayerIsIn[userName] = wrapper;
-		_ = wrapper.RunGameAsync(encounterData.FirstPlayer);
+		_ = RunCampaignGameAsync(wrapper, engine, encounterData.FirstPlayer, onGameEnded);
 
 		_logger?.LogInformation("Campaign battle {MatchId} engine started for {Player}", gameId, userName);
 		return wrapper;
+	}
+
+	private async Task RunCampaignGameAsync(
+		HexGameWrapper wrapper,
+		HexRulesEngine engine,
+		UID firstPlayer,
+		Action<HexRulesEngine, List<UID>, List<UID>> onGameEnded)
+	{
+		var matchId = wrapper.Id;
+		var (winner, loser) = await wrapper.RunGameAsync(firstPlayer).ConfigureAwait(false);
+		if (!winner.IsValid() && !loser.IsValid())
+		{
+			_logger?.LogWarning(
+				"Campaign battle {MatchId} ended without a winner/loser result; campaign progression was not applied",
+				matchId);
+			return;
+		}
+
+		var winners = winner.IsValid() ? new List<UID> { winner } : new List<UID>();
+		var losers = loser.IsValid() ? new List<UID> { loser } : new List<UID>();
+		try
+		{
+			onGameEnded(engine, winners, losers);
+		}
+		catch (Exception ex)
+		{
+			_logger?.LogError(
+				ex,
+				"Campaign battle {MatchId} finished but campaign progression callback failed",
+				matchId);
+		}
 	}
 
 	private void CleanupMatch(ulong matchId)

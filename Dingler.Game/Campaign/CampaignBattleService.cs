@@ -51,6 +51,7 @@ public sealed class CampaignBattleService
 
     private readonly CampaignRunStore _store;
     private readonly CampaignOptions _options;
+    private readonly CampaignService _campaignService;
     private readonly ILogger<CampaignBattleService>? _logger;
     private readonly ConcurrentDictionary<ulong, PendingBattle> _pending = new();
     private readonly ConcurrentDictionary<ulong, JoinedBattle> _joined = new();
@@ -59,10 +60,12 @@ public sealed class CampaignBattleService
     public CampaignBattleService(
         CampaignRunStore store,
         CampaignOptions options,
+        CampaignService campaignService,
         ILogger<CampaignBattleService>? logger = null)
     {
         _store = store;
         _options = options;
+        _campaignService = campaignService;
         _logger = logger;
     }
 
@@ -234,6 +237,12 @@ public sealed class CampaignBattleService
         _logger?.LogInformation(
             "Campaign battle: {user} battle {game} ended; won={won}",
             userName, battle.Joined.Pending.GameId, won);
+
+        _campaignService.ApplyBattleResult(
+            battle.Joined.Session,
+            battle.Joined.Pending.CampaignId,
+            battle.Joined.Pending.EncounterGuid,
+            won);
     }
 
     private static bool Fail(string why, out string reason)

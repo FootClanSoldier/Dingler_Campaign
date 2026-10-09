@@ -10,9 +10,8 @@ using HexGame::Game.Shared.Campaign.Messages;
 namespace Dingler.Game.Campaign;
 
 /// <summary>
-/// Minimal ServiceCampaign state machine for the first client-visible vertical slice.
-/// It now performs the client-facing encounter launch handoff, but battle/session
-/// creation remains in Dingler's existing LoadBalancer/game infrastructure.
+/// ServiceCampaign state machine for campaign bootstrap, authored conversation/encounter
+/// progression and the handoff between campaign state and Dingler battle sessions.
 /// </summary>
 public sealed class CampaignService
 {
@@ -158,9 +157,28 @@ public sealed class CampaignService
             CompleteConversation(record);
         else if (eventName == "enc_cancel")
         {
-            record.State["ALoc"] = null;
-            record.State["CurState"] = "EXPLORE";
-            _store.Save(record);
+            var cfg = CampaignStateFactory.Race(record.Race);
+            var active = record.State["ALoc"]?.GetValue<string>();
+            var location = string.IsNullOrWhiteSpace(active)
+                ? null
+                : FindLocation(record.State, active);
+            var conversationId = location?["conversationId"]?.GetValue<string>();
+            var isBattleOutcomeConversation = location?["type"]?.GetValue<string>() == "Convo"
+                && (string.Equals(conversationId, cfg.TrainingSuccessConversation, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(conversationId, cfg.TrainingFailConversation, StringComparison.OrdinalIgnoreCase));
+
+            if (isBattleOutcomeConversation)
+            {
+                _logger?.LogInformation(
+                    "Campaign: ignored stale enc_cancel while authored training result conversation {conversation} is active",
+                    conversationId);
+            }
+            else
+            {
+                record.State["ALoc"] = null;
+                record.State["CurState"] = "EXPLORE";
+                _store.Save(record);
+            }
         }
         else if (eventName == "start")
         {
@@ -170,15 +188,180 @@ public sealed class CampaignService
     }
 
 
+    /// <summary>
+    /// Apply the authoritative battle result to campaign state and push the updated
+    /// GameplayState back through ServiceCampaign. Battle simulation stays in the game
+    /// layer; this method owns the campaign progression consequence.
+    /// </summary>
+    public bool ApplyBattleResult(
+        SessionContext context,
+        ulong campaignId,
+        string encounterGuid,
+        bool won)
+    {
+        if (!_store.TryGetByCampaignId(context.ProfileId, campaignId, out var record))
+        {
+            _logger?.LogWarning(
+                "Campaign: battle result ignored; campaign {campaign} was not found for {user}",
+                campaignId, context.UserName);
+            return false;
+        }
+
+        var activeEncounter = record.State["ActiveEncounterGuid"]?.GetValue<string>() ?? string.Empty;
+        if (!string.Equals(activeEncounter, encounterGuid, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger?.LogWarning(
+                "Campaign: battle result ignored for {user}; active encounter {active} does not match finished encounter {finished}",
+                context.UserName, activeEncounter, encounterGuid);
+            return false;
+        }
+
+        var cfg = CampaignStateFactory.Race(record.Race);
+        if (!string.Equals(encounterGuid, cfg.TrainingEncounter, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger?.LogWarning(
+                "Campaign: battle result for encounter {encounter} has no implemented campaign progression rule",
+                encounterGuid);
+            return false;
+        }
+
+        ApplyTrainingBattleResult(record, cfg, won);
+        _store.Save(record);
+
+        var notifyEnvelope = new JsonObject
+        {
+            ["ReckID"] = 0,
+            ["CampID"] = record.CampaignId,
+            ["RequestType"] = "gameendnotify",
+            ["ChampID"] = record.ChampionId,
+            ["GameState"] = record.State.DeepClone(),
+            ["Applied"] = CampaignStateFactory.EmptyAppliedUpdates(),
+            ["WinLose"] = won,
+        };
+
+        var sent = context.TrySendMessageToClient(new CampSysGeneral.Request
+        {
+            Envelope = JsonSerializer.SerializeToUtf8Bytes(notifyEnvelope),
+        });
+
+        if (sent)
+        {
+            _logger?.LogInformation(
+                "Campaign: pushed gameendnotify camp={campaign} encounter={encounter} won={won} active={active}",
+                record.CampaignId, encounterGuid, won, record.State["ALoc"]?.ToString());
+        }
+        else
+        {
+            _logger?.LogWarning(
+                "Campaign: could not queue gameendnotify for {user} after campaign {campaign} battle",
+                context.UserName, record.CampaignId);
+        }
+
+        return sent;
+    }
+
+    private static void ApplyTrainingBattleResult(
+        CampaignRunRecord record,
+        CampaignRaceConfig cfg,
+        bool won)
+    {
+        var trainer = FindLocation(record.State, cfg.TrainerNpc);
+        if (trainer is null)
+        {
+            if (record.State["VisLocs"] is not JsonArray locations)
+            {
+                locations = new JsonArray();
+                record.State["VisLocs"] = locations;
+            }
+
+            var location = CampaignStateFactory.ConversationLocation(
+                cfg.TrainerNpc,
+                won ? cfg.TrainingSuccessConversation : cfg.TrainingFailConversation);
+            locations.Add(location);
+            trainer = location["Data"] as JsonObject;
+        }
+
+        if (trainer is not null)
+        {
+            trainer["type"] = "Convo";
+            trainer["conversationId"] = won
+                ? cfg.TrainingSuccessConversation
+                : cfg.TrainingFailConversation;
+            trainer["encounter"] = null;
+            trainer["completed"] = false;
+            trainer["enabled"] = true;
+            trainer["visible"] = true;
+            trainer["repeatable"] = false;
+            trainer["autostart"] = false;
+        }
+
+        record.State["ALoc"] = cfg.TrainerNpc;
+        record.State["LastNode"] = cfg.TrainerNpc;
+        record.State["CurState"] = "EXPLORE";
+        record.State.Remove("ActiveEncounterGuid");
+
+        if (won)
+        {
+            record.State["TrainingVictoryPending"] = true;
+            record.State["TutorialDone"] = true;
+            record.State["Wins"] = StateInt(record.State, "Wins") + 1;
+            EnsureQuestGiverLocation(record.State, cfg);
+        }
+        else
+        {
+            record.State.Remove("TrainingVictoryPending");
+            record.State["Losses"] = StateInt(record.State, "Losses") + 1;
+        }
+    }
+
+    private static void EnsureQuestGiverLocation(JsonObject state, CampaignRaceConfig cfg)
+    {
+        if (FindLocation(state, cfg.QuestNpc) is not null)
+            return;
+
+        if (state["VisLocs"] is not JsonArray locations)
+        {
+            locations = new JsonArray();
+            state["VisLocs"] = locations;
+        }
+
+        locations.Add(CampaignStateFactory.ConversationLocation(
+            cfg.QuestNpc, cfg.QuestConversation, giveQuest: true));
+    }
+
+    private static JsonObject? FindLocation(JsonObject state, string nameOrNode)
+    {
+        if (state["VisLocs"] is not JsonArray locations)
+            return null;
+
+        foreach (var item in locations.OfType<JsonObject>())
+        {
+            if (item["Data"] is not JsonObject data)
+                continue;
+
+            var node = data["node"]?.GetValue<string>();
+            var name = data["name"]?.GetValue<string>();
+            if (string.Equals(node, nameOrNode, StringComparison.Ordinal)
+                || string.Equals(name, nameOrNode, StringComparison.Ordinal))
+                return data;
+        }
+
+        return null;
+    }
+
+    private static int StateInt(JsonObject state, string name) =>
+        int.TryParse(state[name]?.ToString(), out var value) ? value : 0;
+
+
     private void QueueGameStarted(SessionContext context, CampaignRunRecord record)
     {
         var cfg = CampaignStateFactory.Race(record.Race);
         var active = record.State["ALoc"]?.GetValue<string>();
         var encounterGuid = ActiveEncounter(record, active);
 
-        // The starter panorama's trainer encounter is the only battle in this
-        // vertical slice. Keep the fallback race-specific rather than inventing
-        // an encounter when some unrelated location sends a stale start event.
+        // The starter panorama can recover the trainer encounter from its race metadata
+        // when the active location itself no longer carries an encounter reference.
+        // Do not invent encounters for unrelated locations.
         if (string.IsNullOrWhiteSpace(encounterGuid)
             && string.Equals(active, cfg.TrainerNpc, StringComparison.Ordinal))
         {
@@ -324,56 +507,79 @@ public sealed class CampaignService
 
         if (string.Equals(active, cfg.TrainerNpc, StringComparison.Ordinal))
         {
-            var battleUnlocked = record.State["PublicState"] is JsonObject publicState
-                && publicState["Data"] is JsonObject publicData
-                && publicData["RaceTutorialBattleUnlocked"]?.GetValue<bool>() == true;
-
-            if (battleUnlocked && record.State["VisLocs"] is JsonArray locations)
+            var victoryPending = record.State["TrainingVictoryPending"]?.GetValue<bool>() == true;
+            if (victoryPending)
             {
-                foreach (var item in locations.OfType<JsonObject>())
+                record.State.Remove("TrainingVictoryPending");
+                var trainer = FindLocation(record.State, cfg.TrainerNpc);
+                if (trainer is not null)
                 {
-                    var data = item["Data"] as JsonObject;
-                    var node = data?["node"]?.GetValue<string>();
-                    var name = data?["name"]?.GetValue<string>();
-                    if (!string.Equals(node, cfg.TrainerNpc, StringComparison.Ordinal)
-                        && !string.Equals(name, cfg.TrainerNpc, StringComparison.Ordinal))
-                        continue;
-
-                    // Client ProcessStateChange can auto-trigger the encounter only when
-                    // ALoc still points at the bound trainer NPC. Keep the encounter on
-                    // the trainer's own location instead of moving to TrainingNode.
-                    data!["type"] = "Encounter";
-                    data["encounter"] = cfg.TrainingEncounter;
-                    data["conversationId"] = null;
-                    data["completed"] = false;
-                    data["enabled"] = true;
-                    data["visible"] = true;
-                    data["autostart"] = false;
-                    break;
+                    trainer["completed"] = true;
+                    trainer["visible"] = false;
+                    trainer["enabled"] = false;
+                    trainer["autostart"] = false;
                 }
 
-                record.State["ALoc"] = cfg.TrainerNpc;
-                record.State["LastNode"] = cfg.TrainerNpc;
+                EnsureQuestGiverLocation(record.State, cfg);
+                record.State["ALoc"] = null;
                 record.State["CurState"] = "EXPLORE";
                 _logger?.LogInformation(
-                    "Campaign: trainer handoff -> encounter {encounter} on {trainer}",
-                    cfg.TrainingEncounter,
-                    cfg.TrainerNpc);
+                    "Campaign: training victory conversation completed; trainer {trainer} hidden and quest giver {quest} exposed",
+                    cfg.TrainerNpc, cfg.QuestNpc);
             }
             else
             {
-                // The player declined the spar, or the authored choice event was not
-                // received. Leave the trainer conversation available for another try.
-                record.State["ALoc"] = null;
-                record.State["CurState"] = "EXPLORE";
+                var battleUnlocked = record.State["PublicState"] is JsonObject publicState
+                    && publicState["Data"] is JsonObject publicData
+                    && publicData["RaceTutorialBattleUnlocked"]?.GetValue<bool>() == true;
+
+                if (battleUnlocked && record.State["VisLocs"] is JsonArray locations)
+                {
+                    foreach (var item in locations.OfType<JsonObject>())
+                    {
+                        var data = item["Data"] as JsonObject;
+                        var node = data?["node"]?.GetValue<string>();
+                        var name = data?["name"]?.GetValue<string>();
+                        if (!string.Equals(node, cfg.TrainerNpc, StringComparison.Ordinal)
+                            && !string.Equals(name, cfg.TrainerNpc, StringComparison.Ordinal))
+                            continue;
+
+                        // Client ProcessStateChange can auto-trigger the encounter only when
+                        // ALoc still points at the bound trainer NPC. Keep the encounter on
+                        // the trainer's own location instead of moving to TrainingNode.
+                        data!["type"] = "Encounter";
+                        data["encounter"] = cfg.TrainingEncounter;
+                        data["conversationId"] = null;
+                        data["completed"] = false;
+                        data["enabled"] = true;
+                        data["visible"] = true;
+                        data["autostart"] = false;
+                        break;
+                    }
+
+                    record.State["ALoc"] = cfg.TrainerNpc;
+                    record.State["LastNode"] = cfg.TrainerNpc;
+                    record.State["CurState"] = "EXPLORE";
+                    _logger?.LogInformation(
+                        "Campaign: trainer handoff -> encounter {encounter} on {trainer}",
+                        cfg.TrainingEncounter,
+                        cfg.TrainerNpc);
+                }
+                else
+                {
+                    // The player declined the spar, or the authored choice event was not
+                    // received. Leave the trainer conversation available for another try.
+                    record.State["ALoc"] = null;
+                    record.State["CurState"] = "EXPLORE";
+                }
             }
 
             _store.Save(record);
             return;
         }
 
-        // Only the implemented intro/trainer tutorial transitions advance campaign state.
-        // Other conversations still close back to panorama explore mode unchanged.
+        // Conversations without an authored transition currently close back to panorama
+        // explore mode without changing other campaign state.
         if (!string.IsNullOrWhiteSpace(active))
         {
             record.State["ALoc"] = null;
