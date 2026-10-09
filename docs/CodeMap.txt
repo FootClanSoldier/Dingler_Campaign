@@ -1,0 +1,176 @@
+DINGLER CAMPAIGN CODE MAP
+========================
+
+Dingler.Game/Campaign/
+    Campaign domain/state and the bridge from campaign encounters into Dingler
+    battle sessions. Keep this separate from battle simulation itself.
+
+Dingler.Game/Arena/
+    Frost Ring Arena domain/battle state. Working functionality; campaign work
+    must not repurpose ArenaBattleService as campaign state storage.
+
+Dingler.Game/Games/
+    Shared game/session engine integration around original HEX rules classes.
+
+Dingler.Game.Protocol/
+    Wire message decoding/encoding and custom protocol request wrappers.
+
+Dingler.Server/
+    Connection/session context and response delivery infrastructure.
+
+Campaign bootstrap and state
+----------------------------
+Dingler.Game/Campaign/CampaignOptions.cs
+    Campaign configuration/defaults.
+
+Dingler.Game/Campaign/CampaignRaceConfig.cs
+    Data shape for race-specific starter panorama metadata.
+
+Dingler.Game/Campaign/CampaignStateFactory.cs
+    Builds client-facing GameplayState/CampSummary/InputResponse structures and
+    currently contains the eight AZ0 starter panorama configurations.
+
+Dingler.Game/Campaign/CampaignRunRecord.cs
+    Persisted campaign/champion run data shape.
+
+Dingler.Game/Campaign/CampaignRunStore.cs
+    Campaign persistence boundary used by campaign services and battle bridge.
+
+Dingler.Game/Campaign/CampaignBootstrapChampion.cs
+    Creates the campaign champion_bits projection exposed to the client/original
+    rules engine, including persisted deck/talents.
+
+Dingler.Game/Campaign/CampaignChampionRequestReader.cs
+    Reads campaign champion update request data from original HEX request types.
+
+Campaign service / ServiceCampaign protocol
+-------------------------------------------
+Dingler.Game/Campaign/CampaignService.cs
+    Main CampSysGeneral campaign state machine. Handles campaign queries/actions,
+    starter conversation progression, trainer-to-encounter transition, gamestarted
+    handoff, and campaign consequences of completed battles. It persists the updated
+    GameplayState and pushes gameendnotify; battle simulation itself stays elsewhere.
+
+Dingler.Game/Handlers/Request/Campaign/CampaignSystemRequestHandler.cs
+    ServiceCampaign CampSysGeneral request entry point.
+
+Dingler.Game/Handlers/Request/Campaign/ServiceCampaignClusterPickRequestHandler.cs
+    ClusterComms ServiceCampaign pickreq -> pickres route using original HEX
+    ClusterComms response types.
+
+Dingler.Game/Handlers/Request/Profile/CampaignChampionProfileRequestHandlers.cs
+    Persists selected PvE deck and champion talents.
+
+Dingler.Game/Services/CollectionCacheService.cs
+    Streams campaign champion data through the normal collection/profile cache.
+
+Protocol and response ordering
+------------------------------
+Dingler.Game.Protocol/Messages/Requests/ServiceCampaignClusterEnvelopeRequest.cs
+    Wrapper for ServiceCampaign ClusterComms envelope requests.
+
+Dingler.Game.Protocol/Middleware/DecodeMiddleware.cs
+    Recognizes/decodes campaign-specific incoming protocol messages.
+
+Dingler.Game.Protocol/Middleware/EncodeMiddleware.cs
+    Encodes responses and supports queued unsolicited campaign messages.
+
+Dingler.Server/SessionContext.cs
+    Per-client context used by campaign/profile/battle services.
+
+Dingler.Server/DinglerClient.cs
+    Response delivery path; supports deterministic queued server push after the
+    current response, used by campaign gamestarted.
+
+Campaign battle bridge
+----------------------
+Dingler.Game/Campaign/CampaignBattleService.cs
+    Owns campaign StartEncounter reservations, JoinSession validation and active
+    campaign battle tracking. Validates camp_<CampaignID>, ActiveEncounterGuid,
+    champion and selected PvE deck. Finished results are forwarded to CampaignService
+    for progression. It must remain separate from ArenaBattleService.
+
+Dingler.Game/Handlers/Request/Arena/ArenaBattleRequestHandlers.cs
+    Shared LoadBalancer/session protocol surface. Routes StartEncounter,
+    JoinSession and ReadyToStartGame between Frost Ring and Campaign based on
+    flags/session ownership while preserving the Arena path.
+
+Current verified campaign battle route:
+    ServiceCampaign sendevent(start)
+      -> unsolicited gamestarted
+      -> StartEncounter
+      -> CampaignBattleService reservation
+      -> JoinSession
+      -> CampaignBattleService creates campaign game
+      -> original PvE initializer loads CampaignTest + Gareth Kay
+      -> ReadyToStartGame
+      -> first original-HEX session event batch reaches the authenticated client
+      -> playable training battle
+      -> Gareth/ServiceAI eliminated by ChampionDefeated
+      -> authoritative result callback reports won=true
+      -> match is removed from the game registry
+
+Implemented next boundary awaiting runtime verification:
+    finished campaign battle
+      -> CampaignService applies training win/loss to persisted GameplayState
+      -> final game-session event batch has drained
+      -> unsolicited gameendnotify carries the updated GameState
+      -> authored trainer success/failure conversation becomes active
+      -> on successful conversation completion the trainer is hidden and quest giver
+         remains/exposes its authored conversation.
+
+Campaign game creation binds the human player UID to the authenticated username;
+network delivery must not infer the account from the campaign champion display name.
+
+Game engine / original HEX reuse
+--------------------------------
+Dingler.Game/Games/GameManager.cs
+    Creates and registers HexGameWrapper/HexRulesEngine games. Campaign uses a
+    dedicated CreateCampaignGame path rather than forcing campaign through the
+    Frost Ring game-creation path. The campaign human seat is explicitly bound
+    to the authenticated account name used by SessionManager. Campaign progression
+    is invoked only after HexGameWrapper.RunGameAsync returns, so the final battle
+    session events flush before ServiceCampaign game-end notification.
+
+Dingler.Game/Games/HexGameWrapper.cs
+    Queues and delivers original-HEX game events to connected clients. Supports
+    an explicit player-UID -> authenticated username binding because a campaign
+    champion's display name is not necessarily the login/account name. Existing
+    champion-name lookup remains as fallback for Arena/tournament behavior. The
+    same binding is used to resolve the player during reconnect.
+
+Dingler.Game/Games/HexRulesEngine.Campaign.cs
+    Campaign-specific seam into original HEX PvE initialization. Supplies the
+    persisted campaign champion/deck through HasDeckAndChampInfo-compatible data
+    and lets original IsEncounter|IsPvE behavior resolve the encounter scene/AI.
+
+Dingler.Game/Games/HexRulesEngine.Arena.cs
+    Frost Ring-specific engine bootstrap. Do not change for campaign merely to
+    share code unless a later verified need proves the behavior is generic.
+
+Dingler.Game/Arena/Ai/ArenaAiSeat.cs
+    Existing local original-HEX AI seat/pump used by Frost Ring and currently
+    reused as the seat adapter for campaign AI.
+
+Dingler.Game/Handlers/Request/Game/ReadyForGameSetupRequestHandler.cs
+    Game setup protocol handler. Keep diagnostics/routing consistent with the
+    actual client sequence discovered from runtime logs.
+
+Composition / registration
+--------------------------
+Dingler.Game/CompositionRoot/CompositionRoot.cs
+    Registers CampaignRunStore, CampaignService, CampaignBattleService and
+    related handlers/services with Dingler's existing DI/composition model.
+
+Important campaign invariants
+-----------------------------
+- Campaign state and battle simulation are separate responsibilities.
+- Active encounter identity is persisted as ActiveEncounterGuid before battle.
+- Session names use camp_<CampaignID> for campaign battles.
+- Campaign battle flags are IsEncounter | IsPvE, not IsPvEArena.
+- Frost Ring remains IsPvEArena and follows ArenaBattleService.
+- Campaign champion display names and authenticated account names are separate
+  identities; game-event delivery must route by the explicit network binding.
+- The original HEX rules/AI path is preferred over custom battle/rules ports.
+- Campaign battle results must be applied by the campaign layer after the final game
+  session events have flushed, then delivered as ServiceCampaign state updates.
