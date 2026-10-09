@@ -23,6 +23,10 @@ public class HexGameWrapper : IDisposable
 	private readonly ConcurrentDictionary<string, bool> _leaveChecks;
 	private readonly Dictionary<Player, Dictionary<object, (int eventId, byte[] eventData)>> _eventHistory;
 	private readonly ConcurrentQueue<UID> _pendingReconnects;
+	private readonly ConcurrentDictionary<UID, string> _networkUsernamesByPlayer;
+	private readonly ConcurrentDictionary<UID, byte> _missingNetworkSessionWarnings;
+	private readonly ConcurrentDictionary<UID, byte> _firstNetworkBatchLogged;
+	private readonly ConcurrentDictionary<UID, byte> _failedNetworkSendWarnings;
 
 	public SessionStateEncounterData EncounterData => _gameSession.EncounterData;
 	
@@ -58,6 +62,10 @@ public class HexGameWrapper : IDisposable
 		_leaveChecks = new ConcurrentDictionary<string, bool>();
 		_eventHistory = new Dictionary<Player, Dictionary<object, (int eventId, byte[] eventData)>>();
 		_pendingReconnects = new ConcurrentQueue<UID>();
+		_networkUsernamesByPlayer = new ConcurrentDictionary<UID, string>();
+		_missingNetworkSessionWarnings = new ConcurrentDictionary<UID, byte>();
+		_firstNetworkBatchLogged = new ConcurrentDictionary<UID, byte>();
+		_failedNetworkSendWarnings = new ConcurrentDictionary<UID, byte>();
 	}
 	
 	public bool IsGameEnded => _gameSession.IsGameEnded;
@@ -150,6 +158,20 @@ public class HexGameWrapper : IDisposable
 		_gameSession.AddPlayer(player);
 		return true;
 	}
+
+	/// <summary>
+	/// Bind a game-seat UID to the authenticated account name used by SessionManager.
+	/// PvE champion display names are independent from login names, so network delivery
+	/// must not assume that Player.m_ChampionCard.GetName() identifies the connection.
+	/// </summary>
+	public void BindNetworkSession(UID playerId, string username)
+	{
+		if (string.IsNullOrWhiteSpace(username))
+			throw new ArgumentException("A network username is required.", nameof(username));
+
+		_networkUsernamesByPlayer[playerId] = username;
+		_missingNetworkSessionWarnings.TryRemove(playerId, out _);
+	}
 	
 	public IReadOnlyList<string> GetPlayerNames()
 	{
@@ -210,7 +232,7 @@ public class HexGameWrapper : IDisposable
 				_eventQueues[player] = queue;
 			}
 			
-			if (!_sessionManager.TryGetUserSession(player.m_ChampionCard.GetName(), out var session))
+			if (!TryResolveNetworkSession(player, out var session))
 				continue;
 
 			var networkSessionEvent = new NetworkPacketSessionEventArgs
@@ -257,7 +279,24 @@ public class HexGameWrapper : IDisposable
 					SessionArgs = networkSessionEvent
 				};
 
-				session.TrySendMessageToClient(sessionEvent);
+				if (!session.TrySendMessageToClient(sessionEvent))
+				{
+					if (_failedNetworkSendWarnings.TryAdd(player.m_PlayerId, 0))
+					{
+						_logger?.LogWarning(
+							"Match {MatchId}: network session for {User} rejected a session event batch for player {PlayerId}",
+							Id, session.UserName, player.m_PlayerId);
+					}
+					continue;
+				}
+
+				_failedNetworkSendWarnings.TryRemove(player.m_PlayerId, out _);
+				if (_firstNetworkBatchLogged.TryAdd(player.m_PlayerId, 0))
+				{
+					_logger?.LogInformation(
+						"Match {MatchId}: sent first session event batch ({EventCount} events) to {User} for player {PlayerId}",
+						Id, queued.Count, session.UserName, player.m_PlayerId);
+				}
 			}
 			catch (OperationCanceledException)
 			{
@@ -273,6 +312,17 @@ public class HexGameWrapper : IDisposable
 
 	public bool TryGetPlayerId(string username, out UID playerId)
 	{
+		foreach (var binding in _networkUsernamesByPlayer)
+		{
+			if (!string.Equals(binding.Value, username, StringComparison.Ordinal))
+				continue;
+			if (_gameSession.GetPlayer(binding.Key) is null)
+				continue;
+
+			playerId = binding.Key;
+			return true;
+		}
+
 		var player = _gameSession.GetAllPlayers()
 			.FirstOrDefault(p => p.m_ChampionCard?.GetName() == username);
 
@@ -294,9 +344,12 @@ public class HexGameWrapper : IDisposable
 			if (player is null)
 				continue;
 
-			var name = player.m_ChampionCard?.GetName();
-			if (string.IsNullOrEmpty(name) || !_sessionManager.TryGetUserSession(name, out var session))
+			if (!TryResolveNetworkSession(player, out var session))
 				continue;
+
+			var name = _networkUsernamesByPlayer.TryGetValue(player.m_PlayerId, out var boundUsername)
+				? boundUsername
+				: player.m_ChampionCard?.GetName() ?? player.m_PlayerId.ToString();
 
 			_readyPlayers[player] = 1;
 
@@ -392,6 +445,34 @@ public class HexGameWrapper : IDisposable
 
 			_logger?.LogInformation("Player {Player} resynced into match {MatchId}", name, Id);
 		}
+	}
+
+	private bool TryResolveNetworkSession(Player player, out SessionContext session)
+	{
+		if (_networkUsernamesByPlayer.TryGetValue(player.m_PlayerId, out var boundUsername)
+		    && _sessionManager.TryGetUserSession(boundUsername, out session))
+		{
+			_missingNetworkSessionWarnings.TryRemove(player.m_PlayerId, out _);
+			return true;
+		}
+
+		var championName = player.m_ChampionCard?.GetName();
+		if (!string.IsNullOrEmpty(championName)
+		    && _sessionManager.TryGetUserSession(championName, out session))
+		{
+			_missingNetworkSessionWarnings.TryRemove(player.m_PlayerId, out _);
+			return true;
+		}
+
+		session = null!;
+		if (_missingNetworkSessionWarnings.TryAdd(player.m_PlayerId, 0))
+		{
+			_logger?.LogWarning(
+				"Match {MatchId}: no network session for player {PlayerId}; bound username={BoundUsername}, champion name={ChampionName}",
+				Id, player.m_PlayerId, boundUsername, championName);
+		}
+
+		return false;
 	}
 
 	private void SendSessionEvents(SessionContext session, Player player, IEnumerable<SessionEventArgs> events)

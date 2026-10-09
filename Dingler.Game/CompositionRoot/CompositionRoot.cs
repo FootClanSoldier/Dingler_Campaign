@@ -56,8 +56,8 @@ namespace Dingler.Game.CompositionRoot
                 sc.AddSingleton(arenaRunStore);
                 sc.AddSingleton<Dingler.Game.Arena.ArenaBattleService>();
 
-                // PvE campaign phase 1: persistent starter-panorama state + generic ServiceCampaign handler.
-                // Keep this isolated from ArenaBattleService/HexRulesEngine until the client-side campaign flow is proven.
+                // PvE campaign state and ServiceCampaign handling stay separate from Frost Ring state.
+                // Battle simulation is connected through CampaignBattleService and the shared game infrastructure.
                 var campaignStorePath = hb.Configuration["Campaign:StorePath"] is { Length: > 0 } configuredCampaignPath
                     ? configuredCampaignPath
                     : Path.Combine(AppContext.BaseDirectory, "data", "campaign");
@@ -80,6 +80,7 @@ namespace Dingler.Game.CompositionRoot
                 sc.AddSingleton(campaignOptions);
                 sc.AddSingleton(campaignRunStore);
                 sc.AddSingleton<CampaignService>();
+                sc.AddSingleton<CampaignBattleService>();
 
                 // Deck import from the Hex Codex deck builder: the site's data folder (ids.json, gems.json) and the inbox.
                 sc.AddSingleton(new Dingler.Game.DeckImport.DeckImportOptions

@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace Dingler.Game.Handlers.Request.Profile;
 
 /// <summary>
-/// Phase 1.1 compatibility for the temporary campaign bootstrap champion.
+/// Profile compatibility for the temporary campaign bootstrap champion.
 /// The client sends this after choosing/saving a PvE deck, before it launches ServiceCampaign.
 /// The request expects no reply; persisting the raw deck instance id is enough for the next profile stream.
 /// </summary>

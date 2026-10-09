@@ -50,8 +50,8 @@ public static class CampaignBootstrapChampion
             return;
 
         // The exact champion_bits surface differs between shipped client assemblies.
-        // Avoid making Phase 1.1 depend on a compile-time ChampionTalents property while
-        // still populating it when this client's contract exposes List<ResourceId>.
+        // Avoid a compile-time dependency on ChampionTalents because the exact champion_bits
+        // surface differs between shipped client assemblies; populate it when exposed.
         var property = typeof(champion_bits).GetProperty("ChampionTalents");
         if (property?.CanWrite != true)
             return;

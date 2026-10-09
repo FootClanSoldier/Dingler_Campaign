@@ -62,7 +62,7 @@ public sealed class CampaignService
 
     private JsonNode CreateCampaign(SessionContext context, JsonElement root)
     {
-        // Phase 1 only materializes the starter PANORAMA. The client can still call
+        // Only the starter PANORAMA is currently materialized. The client can still call
         // createcamp; returning the same idempotent record is safer than inventing a dungeon.
         return QueryCurrent(context, root);
     }
@@ -372,8 +372,8 @@ public sealed class CampaignService
             return;
         }
 
-        // Phase 1.7 only advances the intro/trainer tutorial slice. Other
-        // conversations still close back to panorama explore mode unchanged.
+        // Only the implemented intro/trainer tutorial transitions advance campaign state.
+        // Other conversations still close back to panorama explore mode unchanged.
         if (!string.IsNullOrWhiteSpace(active))
         {
             record.State["ALoc"] = null;
@@ -397,7 +397,7 @@ public sealed class CampaignService
     private static JsonNode Unsupported(JsonElement root, string requestType)
     {
         var campaignId = ULong(root, "CampID");
-        return CampaignStateFactory.BuildFailure(campaignId, $"Unsupported campaign request '{requestType}' in phase 1");
+        return CampaignStateFactory.BuildFailure(campaignId, $"Unsupported campaign request '{requestType}'");
     }
 
     private static IEnumerable<ulong> CampaignIds(JsonElement root)

@@ -5,7 +5,7 @@ using Dingler.Game.Protocol;
 namespace Dingler.Game.Campaign;
 
 /// <summary>
-/// Phase-1 persistence: one small JSON file per profile/champion.
+/// Campaign persistence currently uses one small JSON file per profile/champion.
 /// This mirrors the proven ArenaRunStore pattern and avoids an EF migration while
 /// the client contract is still being validated.
 /// </summary>

@@ -1,7 +1,8 @@
-extern alias HexGame;
+﻿extern alias HexGame;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using Dingler.Server;
+using Dingler.Game.Arena.Ai;
 using Dingler.Game.Cards;
 using Dingler.Game.GameObjects;
 using Dingler.Game.Tournaments;
@@ -194,6 +195,76 @@ public sealed class GameManager : IDisposable
 		_ = wrapper.RunGameAsync(UID.Invalid);
 
 		_logger?.LogInformation("Arena battle {MatchId} started for {Player}", gameId, userName);
+		return wrapper;
+	}
+
+
+	/// <summary>
+	/// Campaign PvE: create a native IsEncounter | IsPvE rules session and let the original HEX PvE
+	/// initializer resolve the encounter scene. Campaign state supplies only the player's persisted
+	/// champion/deck; no Python battle/rules implementation is involved.
+	/// </summary>
+	public HexGameWrapper CreateCampaignGame(
+		ulong gameId,
+		string sessionName,
+		SessionStateEncounterData encounterData,
+		UID humanId,
+		deck_bits humanDeck,
+		champion_bits campaignChampion,
+		string userName,
+		List<ETurnPhases>? selfStops,
+		List<ETurnPhases>? opponentStops,
+		UID aiId,
+		Action<HexRulesEngine, List<UID>, List<UID>> onGameEnded)
+	{
+		var engine = new HexRulesEngine(sessionName, new UID(UID.Type.AuthoritativeSession, gameId),
+			_loggerFactory?.CreateLogger<HexRulesEngine>())
+		{
+			m_EncounterData = encounterData,
+			ForcedFirstPlayer = encounterData.FirstPlayer,
+		};
+
+		// Keep campaign matches bounded without borrowing Frost Ring run state.
+		var gameCts = new CancellationTokenSource(TimeSpan.FromHours(3));
+		_gameCtsCollection[gameId] = gameCts;
+
+		var wrapper = new HexGameWrapper(engine, new CardVisibilityManager(), _sessionManager, gameCts.Token,
+			_loggerFactory?.CreateLogger<HexGameWrapper>(), CleanupMatch);
+		wrapper.BindNetworkSession(humanId, userName);
+		engine.GameEnded += (winners, losers) => onGameEnded(engine, winners, losers);
+
+		var human = new TrackedPlayer(new PlayerState { PlayerId = humanId, PlayerPosition = 0 }, UID.Invalid);
+		var ai = new TrackedPlayer(new PlayerState { PlayerId = aiId, PlayerPosition = 1 }, UID.Invalid);
+		human.GameTimer.MatchClockLimit = TimeSpan.FromDays(1);
+		human.GameTimer.InactivityLimit = TimeSpan.FromMinutes(45);
+		ai.GameTimer.MatchClockLimit = TimeSpan.FromDays(1);
+		ai.GameTimer.InactivityLimit = TimeSpan.FromDays(1);
+
+		if (selfStops is not null && opponentStops is not null)
+			human.SetTurnPhases(selfStops.Distinct().ToList(), opponentStops.Distinct().ToList());
+
+		try
+		{
+			wrapper.TryAddPlayer(human);
+			wrapper.TryAddPlayer(ai);
+			engine.ConfigureCampaignPlayer(humanId, campaignChampion, humanDeck, userName);
+			engine.AttachAiSeat(new ArenaAiSeat(engine, ai, human, _loggerFactory?.CreateLogger("CampaignAi")));
+			engine.StartCampaignGame(human, ai);
+		}
+		catch (Exception ex)
+		{
+			_logger?.LogError("Campaign battle {MatchId} could not start: {Exception}", gameId, ex);
+			_gameCtsCollection.TryRemove(gameId, out _);
+			gameCts.Dispose();
+			wrapper.Dispose();
+			throw;
+		}
+
+		_runningMatches[gameId] = wrapper;
+		_gamePlayerIsIn[userName] = wrapper;
+		_ = wrapper.RunGameAsync(encounterData.FirstPlayer);
+
+		_logger?.LogInformation("Campaign battle {MatchId} engine started for {Player}", gameId, userName);
 		return wrapper;
 	}
 

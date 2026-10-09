@@ -17,8 +17,8 @@ public sealed class CampaignRunRecord
     public string TemplateName { get; set; } = "AZ1";
     public bool Started { get; set; }
 
-    // Phase 1.1 profile compatibility: persist the client-selected PvE deck and talents
-    // for the temporary bootstrap champion until Dingler has first-class champion persistence.
+    // Persist the client-selected PvE deck and talents for the bootstrap champion until
+    // Dingler has first-class campaign champion persistence.
     public ulong LastDeckId { get; set; }
     public List<string> ChampionTalents { get; set; } = new();
 

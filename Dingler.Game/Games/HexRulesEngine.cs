@@ -1,4 +1,4 @@
-extern alias HexGame;
+﻿extern alias HexGame;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using Dingler.Game.Cards;
@@ -223,6 +223,17 @@ public sealed partial class HexRulesEngine : AuthoritativeSessionBase, IDisposab
 		[MaybeNullWhen(false)] out Dictionary<string, int> dungeonIntTacData,
 		[MaybeNullWhen(false)] out List<ResourceId> partyMembers)
 	{
+		if (TryGetCampaignDeckAndChampInfo(player, out var campaignChamp, out var campaignDeck,
+			out var campaignKeepName, out var campaignTacData, out var campaignPartyMembers))
+		{
+			champ = campaignChamp!;
+			deck = campaignDeck!;
+			keepname = campaignKeepName!;
+			dungeonIntTacData = campaignTacData!;
+			partyMembers = campaignPartyMembers!;
+			return true;
+		}
+
 		champ = null;
 		deck = null;
 		keepname = null;

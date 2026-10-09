@@ -1,7 +1,7 @@
 ﻿namespace Dingler.Game.Campaign;
 
 /// <summary>
-/// Phase-1 campaign settings. DefaultRace follows HEX's ERace values:
+/// Campaign bootstrap settings. DefaultRace follows HEX's ERace values:
 /// 1 Human, 2 Elf, 3 Coyotle, 4 Orc, 5 Dwarf, 6 Shin'hare, 7 Vennen, 8 Necrotic.
 /// </summary>
 public sealed class CampaignOptions
