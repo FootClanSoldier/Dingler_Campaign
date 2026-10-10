@@ -27,29 +27,58 @@ Dingler.Game/Campaign/CampaignRaceConfig.cs
     Data shape for race-specific starter panorama metadata.
 
 Dingler.Game/Campaign/CampaignStateFactory.cs
-    Builds client-facing GameplayState/CampSummary/InputResponse structures and
-    currently contains the eight AZ0 starter panorama configurations.
+    Builds client-facing GameplayState/CampSummary/InputResponse structures for
+    starter PANORAMA, Crayburn QUEST journal state and Crayburn DUNGEON state.
+
+Dingler.Game/Campaign/CampaignCrayburnConfig.cs
+    Static authored Crayburn metadata: original QuestTemplate identity/objectives,
+    castle asset identity, race-specific opening conversations/encounter scenes and
+    authored battle success/fail conversations for the castle encounters.
+
+Dingler.Game/Campaign/CampaignChampionRun.cs
+    Versioned per-profile/per-champion persistence aggregate. Owns deck/talents,
+    CurrentCampaignId and the collection of independent campaign instances.
 
 Dingler.Game/Campaign/CampaignRunRecord.cs
-    Persisted campaign/champion run data shape.
+    One PANORAMA/QUEST/DUNGEON campaign instance with stable CampID + GameplayState.
+    Champion ownership/deck/talents are projected from CampaignChampionRun.
 
 Dingler.Game/Campaign/CampaignRunStore.cs
-    Campaign persistence boundary used by campaign services and battle bridge.
+    Campaign persistence boundary. Migrates the legacy single-record JSON shape to
+    aggregate format v2, resolves current scene/reconnect state, enumerates active
+    campaigns by type and atomically commits P/Q/D entry and Crayburn-completion
+    handoffs, plus final QUEST/report-PANORAMA turn-in, preserving stable CampIDs.
+    Finished quests are excluded from getactive while getcampstate remains addressable.
 
 Dingler.Game/Campaign/CampaignBootstrapChampion.cs
-    Creates the campaign champion_bits projection exposed to the client/original
-    rules engine, including persisted deck/talents.
+    Creates race-specific bootstrap champion_bits projections (Human, Elf, Coyotle,
+    Orc, Dwarf, Shin'hare, Vennen, Necrotic), including persisted deck/talents.
+    Each champion uses a distinct stable profile-derived ID; existing Human ID
+    and CampaignTest name are unchanged. Resolves raw/packed bootstrap IDs.
 
 Dingler.Game/Campaign/CampaignChampionRequestReader.cs
     Reads campaign champion update request data from original HEX request types.
 
+Dingler.Game/Campaign/CampaignQuestTemplateDiagnostics.cs
+    Research-only startup diagnostic over the original HEX TemplateManager. After
+    client gamedata has loaded, it locates QuestTemplate collections by reflection,
+    indexes the available quest templates, and writes full authored-member/objective
+    detail for Crayburn-named candidates to
+    <Campaign:StorePath>/diagnostics/quest-templates-crayburn.json. Diagnostic
+    failure is logged and never blocks server startup.
+
 Campaign service / ServiceCampaign protocol
 -------------------------------------------
 Dingler.Game/Campaign/CampaignService.cs
-    Main CampSysGeneral campaign state machine. Handles campaign queries/actions,
-    starter conversation progression, trainer-to-encounter transition, gamestarted
-    handoff, and campaign consequences of completed battles. It persists the updated
-    GameplayState and pushes gameendnotify; battle simulation itself stays elsewhere.
+    Main CampSysGeneral campaign state machine. Handles type-aware campaign queries,
+    starter conversation progression, trainer-to-encounter/gameendnotify flow, the
+    quest-giver QUEST/DUNGEON handoff, Crayburn conversation-node progression,
+    castle encounter result handoffs and final Crayburn -> QUEST Step2 -> retained
+    panorama return state. Dungeon wins/losses become race-authored result conversations;
+    success completion advances the castle (or completes it at PenworthTower) and failure
+    completion restores the encounter for retry. Race-specific quest-giver report
+    conv_done atomically finishes Step2/QUEST and the returned PANORAMA NPC state,
+    with non-transitioning QUEST and PANORAMA cmpupdates. Battle simulation stays elsewhere.
 
 Dingler.Game/Handlers/Request/Campaign/CampaignSystemRequestHandler.cs
     ServiceCampaign CampSysGeneral request entry point.
@@ -59,10 +88,15 @@ Dingler.Game/Handlers/Request/Campaign/ServiceCampaignClusterPickRequestHandler.
     ClusterComms response types.
 
 Dingler.Game/Handlers/Request/Profile/CampaignChampionProfileRequestHandlers.cs
-    Persists selected PvE deck and champion talents.
+    Persists selected PvE deck and champion talents per bootstrap champion ID/race;
+    raw and packed request UIDs are normalized; unknown or missing champion
+    identifiers are rejected to prevent cross-race deck/talent corruption.
 
 Dingler.Game/Services/CollectionCacheService.cs
-    Streams campaign champion data through the normal collection/profile cache.
+    Streams all eight test champions through the normal collection/profile cache.
+    Each champion's LastCampaignID follows its own aggregate CurrentCampaignId scene
+    (PANORAMA or DUNGEON); missing/deleted LastDeckID is cleared only for that
+    champion, while deck/talents remain independently champion-owned.
 
 Protocol and response ordering
 ------------------------------
@@ -79,8 +113,8 @@ Dingler.Server/SessionContext.cs
     Per-client context used by campaign/profile/battle services.
 
 Dingler.Server/DinglerClient.cs
-    Response delivery path; supports deterministic queued server push after the
-    current response, used by campaign gamestarted.
+    Response delivery path; supports deterministic FIFO server pushes after the
+    current response, used by gamestarted and the campspawn -> cmpupdate handoff.
 
 Campaign battle bridge
 ----------------------
@@ -110,14 +144,63 @@ Current verified campaign battle route:
       -> authoritative result callback reports won=true
       -> match is removed from the game registry
 
-Implemented next boundary awaiting runtime verification:
+Current verified post-battle campaign route:
     finished campaign battle
       -> CampaignService applies training win/loss to persisted GameplayState
       -> final game-session event batch has drained
       -> unsolicited gameendnotify carries the updated GameState
-      -> authored trainer success/failure conversation becomes active
-      -> on successful conversation completion the trainer is hidden and quest giver
-         remains/exposes its authored conversation.
+      -> authored trainer success conversation becomes active
+      -> trainer conv_done consumes TrainingVictoryPending
+      -> trainer is hidden/completed/disabled
+      -> race-specific quest giver becomes active
+      -> original client sends quest-giver conv_done.
+
+Current verified AZ0 -> Crayburn handoff:
+    quest-giver conv_done
+      -> atomically completes the retained PANORAMA handoff location
+      -> creates a distinct QUEST campaign using az01_q_dwarf_crayburn
+      -> creates a distinct started Crayburn Castle DUNGEON campaign
+      -> CurrentCampaignId switches to the DUNGEON
+      -> normal PANORAMA InputResponse is sent first
+      -> new QUEST gets campspawn
+      -> DUNGEON gets cmpupdate with Transition=true
+      -> original client shows Crayburn Castle / Find the fallen shard in the journal
+      -> original client loads the Crayburn dungeon
+      -> client travels Entrance -> WatchTower and plays the authored WatchTower conversation.
+    getactive exposes independent PANORAMA/QUEST/DUNGEON records, summaries are
+    type-aware, and reconnect/qcur4champ resolve the persisted current scene.
+
+Current verified Crayburn progression:
+    WatchTower conv_done -> Drawbridge
+    Drawbridge conv_done -> CastleGate
+    CastleGate Human battle -> authored success Convo -> InnerBailey
+    InnerBailey conv_done -> TowerGate
+    TowerGate Human battle -> authored success Convo -> PenworthTower
+    PenworthTower Human encounter 61ae67b4-1691-4b1f-903c-687c396256a9 is fully playable
+    through the original HEX PvE engine and returns authoritative won=true.
+    All observed castle transitions use the persisted DUNGEON state and non-transitioning
+    cmpupdate notifications; stale enc_cancel is ignored while a battle-result conversation
+    is active.
+
+Human final Crayburn completion handoff (verified in 2026-10-10 runtime log):
+    PenworthTower win -> race-authored success Convo via gameendnotify
+    final success conv_done -> marks PenworthTower and DUNGEON complete
+      -> completes QUEST Step1 and materializes Step2 "Report your success"
+      -> Step2 uses the race-authored quest-end conversation
+      -> restores the retained PANORAMA as CurrentCampaignId
+      -> exposes the race quest NPC as a turn-in conversation
+      -> queues DUNGEON cmpupdate Transition=false, QUEST cmpupdate Transition=false,
+         then PANORAMA cmpupdate Transition=true.
+    PenworthTower defeat continues to use the already verified defeat/retry state model.
+
+Report completion (implementation pending first live client verification):
+    race quest NPC report conv_done with matching race-authored quest-end GUID,
+    QUEST Step1 completed and Step2 pending
+      -> atomic QUEST Step2 completed, Finished timestamp, FinishReason=Complete
+      -> panorama quest giver completed, turninquest cleared and interaction disabled
+      -> current panorama remains selected; quest no longer appears in getactive
+      -> QUEST cmpupdate Transition=false then PANORAMA cmpupdate Transition=false.
+    Duplicate/stale conv_done cannot grant a second turn-in; no rewards yet.
 
 Campaign game creation binds the human player UID to the authenticated username;
 network delivery must not infer the account from the campaign champion display name.
@@ -161,6 +244,8 @@ Composition / registration
 Dingler.Game/CompositionRoot/CompositionRoot.cs
     Registers CampaignRunStore, CampaignService, CampaignBattleService and
     related handlers/services with Dingler's existing DI/composition model.
+    CollectionCacheService loads original client templates before
+    CampaignQuestTemplateDiagnostics runs.
 
 Important campaign invariants
 -----------------------------
@@ -171,6 +256,10 @@ Important campaign invariants
 - Frost Ring remains IsPvEArena and follows ArenaBattleService.
 - Campaign champion display names and authenticated account names are separate
   identities; game-event delivery must route by the explicit network binding.
+- Temporary bootstrap exposes eight independently persisted race champions. Every
+  campaign request, deck/talent update, and engine initializer must use the
+  selected champion's race, not Campaign:DefaultRace (except as legacy fallback).
+- The Human test champion's ID/name and existing campaign JSON remain stable.
 - The original HEX rules/AI path is preferred over custom battle/rules ports.
 - Campaign battle results must be applied by the campaign layer after the final game
   session events have flushed, then delivered as ServiceCampaign state updates.

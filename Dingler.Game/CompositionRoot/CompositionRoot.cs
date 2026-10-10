@@ -93,6 +93,7 @@ namespace Dingler.Game.CompositionRoot
 
                 sc.AddSingletonStartupService(_ => new CollectionCacheService(
                         gameDataLocation, arenaRunStore, campaignOptions, campaignRunStore))
+                    .AddSingletonStartupService<CampaignQuestTemplateDiagnostics>()
                     .AddHttpClient("AuthClient", (sp, client) =>
                     {
                         var auth = sp.GetRequiredService<IOptions<AuthOptions>>().Value;

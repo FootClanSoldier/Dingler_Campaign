@@ -1,4 +1,4 @@
-﻿extern alias HexGame;
+extern alias HexGame;
 using System.Diagnostics;
 using HexGame::Game.Shared;
 using HexGame::Game.Shared.Domain;
@@ -129,13 +129,14 @@ namespace Dingler.Game.Services
             };
 
             List<champion_bits> campaignChampions = new();
-            CampaignRunRecord? campaignRun = null;
-            if (_campaignOptions?.BootstrapChampion == true)
+            var campaignRuns = new List<CampaignRunRecord>();
+            if (_campaignOptions?.BootstrapChampion == true && _campaignRunStore is not null)
             {
-                var championId = CampaignBootstrapChampion.ChampionId(
-                    profileId, _campaignOptions.DefaultRace);
-                campaignRun = _campaignRunStore?
-                    .GetOrCreate(profileId, championId, _campaignOptions.DefaultRace);
+                for (var race = 1; race <= 8; race++)
+                {
+                    var championId = CampaignBootstrapChampion.ChampionId(profileId, race);
+                    campaignRuns.Add(_campaignRunStore.GetOrCreate(profileId, championId, race));
+                }
             }
 
             var reckoningBits = new reckoning_bits()
@@ -182,47 +183,51 @@ namespace Dingler.Game.Services
                 Debug.WriteLine(ex.Message);
             }
 
-            if (_campaignOptions?.BootstrapChampion == true && campaignRun is not null)
+            if (_campaignOptions?.BootstrapChampion == true && _campaignRunStore is not null)
             {
-                var lastDeckId = campaignRun.LastDeckId;
-                if (lastDeckId != 0 && !context.Decks.ContainsKey(lastDeckId))
+                foreach (var originalRun in campaignRuns)
                 {
-                    // A deleted/stale deck must not be sent back as LastDeckID: the client immediately
-                    // tries to resolve it when launching the campaign. Clear it and reopen the deck editor.
-                    Dingler.Game.Protocol.StaticLogger.LogWarning(
-                        "Campaign profile: clearing stale LastDeckID {deck} for champion {champion}; deck is not in the profile stream",
-                        lastDeckId, campaignRun.ChampionId);
-                    campaignRun = _campaignRunStore?.SetChampionDeck(
-                        profileId, campaignRun.ChampionId, _campaignOptions.DefaultRace, 0) ?? campaignRun;
-                    lastDeckId = 0;
+                    var campaignRun = originalRun;
+                    var lastDeckId = campaignRun.LastDeckId;
+                    if (lastDeckId != 0 && !context.Decks.ContainsKey(lastDeckId))
+                    {
+                        // A deleted/stale deck must not be sent back as LastDeckID: the client immediately
+                        // tries to resolve it when launching the campaign. Clear it and reopen the deck editor.
+                        Dingler.Game.Protocol.StaticLogger.LogWarning(
+                            "Campaign profile: clearing stale LastDeckID {deck} for champion {champion}; deck is not in the profile stream",
+                            lastDeckId, campaignRun.ChampionId);
+                        campaignRun = _campaignRunStore.SetChampionDeck(
+                            profileId, campaignRun.ChampionId, campaignRun.Race, 0);
+                        lastDeckId = 0;
+                    }
+
+                    var stateCampaignId = StateUInt64(campaignRun.State["CampID"]);
+                    var stateChampionId = StateUInt64(campaignRun.State["ChampID"]);
+                    var stateTempType = StateString(campaignRun.State["TempType"]);
+                    var isCurrentCampaignConsistent =
+                        campaignRun.CampaignId != 0 &&
+                        campaignRun.CampaignId == stateCampaignId &&
+                        campaignRun.ChampionId == stateChampionId &&
+                        !string.Equals(campaignRun.CampaignType, "QUEST", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(campaignRun.CampaignType, stateTempType, StringComparison.OrdinalIgnoreCase);
+
+                    if (!isCurrentCampaignConsistent)
+                    {
+                        Dingler.Game.Protocol.StaticLogger.LogWarning(
+                            "Campaign profile: LastCampaignID verification mismatch for champion {champion}: recordCampaign={recordCampaign}, stateCampID={stateCampaign}, stateChampID={stateChampion}, recordType={recordType}, stateTempType={stateType}",
+                            campaignRun.ChampionId, campaignRun.CampaignId, stateCampaignId, stateChampionId,
+                            campaignRun.CampaignType, stateTempType);
+                    }
+
+                    var bootstrapChampion = CampaignBootstrapChampion.Create(
+                        profileId, _campaignOptions, campaignRun.Race, campaignRun.CampaignId, lastDeckId, campaignRun.ChampionTalents);
+                    campaignChampions.Add(bootstrapChampion);
+
+                    Dingler.Game.Protocol.StaticLogger.LogInformation(
+                        "Campaign profile: user {user} champion={champion} race={race} LastCampaignID={campaign} LastDeckID={deck} talents={talents} verifiedCurrent={verified}",
+                        context.UserName ?? "<unknown>", bootstrapChampion.Id, campaignRun.Race, bootstrapChampion.LastCampaignID, bootstrapChampion.LastDeckID,
+                        campaignRun.ChampionTalents.Count, isCurrentCampaignConsistent);
                 }
-
-                var stateCampaignId = StateUInt64(campaignRun.State["CampID"]);
-                var stateChampionId = StateUInt64(campaignRun.State["ChampID"]);
-                var stateTempType = StateString(campaignRun.State["TempType"]);
-                var isStarterPanorama =
-                    campaignRun.CampaignId != 0 &&
-                    campaignRun.CampaignId == stateCampaignId &&
-                    campaignRun.ChampionId == stateChampionId &&
-                    string.Equals(campaignRun.CampaignType, "PANORAMA", StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(stateTempType, "PANORAMA", StringComparison.OrdinalIgnoreCase);
-
-                if (!isStarterPanorama)
-                {
-                    Dingler.Game.Protocol.StaticLogger.LogWarning(
-                        "Campaign profile: LastCampaignID verification mismatch for champion {champion}: recordCampaign={recordCampaign}, stateCampID={stateCampaign}, stateChampID={stateChampion}, recordType={recordType}, stateTempType={stateType}",
-                        campaignRun.ChampionId, campaignRun.CampaignId, stateCampaignId, stateChampionId,
-                        campaignRun.CampaignType, stateTempType);
-                }
-
-                var bootstrapChampion = CampaignBootstrapChampion.Create(
-                    profileId, _campaignOptions, campaignRun.CampaignId, lastDeckId, campaignRun.ChampionTalents);
-                campaignChampions.Add(bootstrapChampion);
-
-                Dingler.Game.Protocol.StaticLogger.LogInformation(
-                    "Campaign profile: user {user} champion={champion} LastCampaignID={campaign} LastDeckID={deck} talents={talents} verifiedPanorama={verified}",
-                    context.UserName, bootstrapChampion.Id, bootstrapChampion.LastCampaignID, bootstrapChampion.LastDeckID,
-                    campaignRun.ChampionTalents.Count, isStarterPanorama);
             }
 
             List<byte[]> encodedData =

@@ -450,16 +450,18 @@ public class HexGameWrapper : IDisposable
 	private bool TryResolveNetworkSession(Player player, out SessionContext session)
 	{
 		if (_networkUsernamesByPlayer.TryGetValue(player.m_PlayerId, out var boundUsername)
-		    && _sessionManager.TryGetUserSession(boundUsername, out session))
+		    && _sessionManager.TryGetUserSession(boundUsername, out var boundSession))
 		{
+			session = boundSession;
 			_missingNetworkSessionWarnings.TryRemove(player.m_PlayerId, out _);
 			return true;
 		}
 
 		var championName = player.m_ChampionCard?.GetName();
 		if (!string.IsNullOrEmpty(championName)
-		    && _sessionManager.TryGetUserSession(championName, out session))
+		    && _sessionManager.TryGetUserSession(championName, out var championSession))
 		{
+			session = championSession;
 			_missingNetworkSessionWarnings.TryRemove(player.m_PlayerId, out _);
 			return true;
 		}

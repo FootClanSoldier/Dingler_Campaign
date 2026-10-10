@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Dingler.Game.Campaign;
@@ -140,6 +140,128 @@ public static class CampaignStateFactory
         });
     }
 
+    public static JsonObject CreateCrayburnQuestState(CampaignRunRecord record)
+    {
+        return ToObject(new
+        {
+            CampID = record.CampaignId,
+            ChampID = record.ChampionId,
+            TempType = "QUEST",
+            PayGroups = Array.Empty<object>(),
+            CSlide = (object?)null,
+            ALoc = CampaignCrayburnConfig.QuestFirstLocation,
+            VisLocs = new object[]
+            {
+                CampaignLocation(
+                    CampaignCrayburnConfig.QuestFirstLocation,
+                    "Dungeon",
+                    encounter: null,
+                    conversationId: null,
+                    enabled: true,
+                    visible: true),
+            },
+            LocNodes = new object[]
+            {
+                new
+                {
+                    Name = CampaignCrayburnConfig.QuestFirstLocation,
+                    Data = new
+                    {
+                        id = CampaignCrayburnConfig.QuestFirstLocation,
+                        type = "DEFAULT",
+                    },
+                },
+            },
+            Encounters = Array.Empty<object>(),
+            Champions = Array.Empty<object>(),
+            CurState = "EXPLORE",
+            LastNode = CampaignCrayburnConfig.QuestFirstLocation,
+            PublicState = new
+            {
+                Data = new
+                {
+                    CampaignGroup = "DUNGEON",
+                },
+            },
+            Started = (string?)null,
+            Finished = (string?)null,
+            FinishReason = (string?)null,
+            Wins = 0,
+            Losses = 0,
+            Score = 0,
+            HealthAdj = 0,
+            DungeonLifeAdj = 0,
+            Flags = new Dictionary<string, object>(),
+        });
+    }
+
+    public static JsonObject CreateCrayburnDungeonState(CampaignRunRecord record, string startedUtc)
+    {
+        var cfg = CampaignCrayburnConfig.Race(record.Race);
+        object[] locNodes =
+        [
+            Node("Entrance"),
+            Node("WatchTower"),
+            Node("Drawbridge"),
+            Node("CastleGate"),
+            Node("InnerBailey"),
+            Node("TowerGate"),
+            Node("PenworthTower"),
+        ];
+
+        object[] visLocs =
+        [
+            CampaignLocation("Entrance", "Dungeon", enabled: true, visible: true),
+            CampaignLocation("WatchTower", "Convo", conversationId: cfg.WatchTowerConversation, enabled: true, visible: true),
+            CampaignLocation("Drawbridge", "Convo", conversationId: cfg.DrawbridgeConversation),
+            CampaignLocation("CastleGate", "Encounter", cfg.CastleGateEncounter, cfg.CastleGateConversation),
+            CampaignLocation("InnerBailey", "Convo", conversationId: cfg.InnerBaileyConversation),
+            CampaignLocation("TowerGate", "Encounter", cfg.TowerGateEncounter, cfg.TowerGateConversation),
+            CampaignLocation("PenworthTower", "Encounter", cfg.PenworthTowerEncounter, cfg.PenworthTowerConversation),
+        ];
+
+        var encounters = new object[]
+        {
+            new { Name = cfg.CastleGateEncounter, Data = new { encscene = cfg.CastleGateEncounter } },
+            new { Name = cfg.TowerGateEncounter, Data = new { encscene = cfg.TowerGateEncounter } },
+            new { Name = cfg.PenworthTowerEncounter, Data = new { encscene = cfg.PenworthTowerEncounter } },
+        };
+
+        return ToObject(new
+        {
+            CampID = record.CampaignId,
+            ChampID = record.ChampionId,
+            TempType = "DUNGEON",
+            PayGroups = Array.Empty<object>(),
+            CSlide = (object?)null,
+            ALoc = "Entrance",
+            VisLocs = visLocs,
+            LocNodes = locNodes,
+            Encounters = encounters,
+            Champions = Array.Empty<object>(),
+            CurState = "EXPLORE",
+            LastNode = "Entrance",
+            PublicState = new
+            {
+                Data = new
+                {
+                    CampaignGroup = "DUNGEON",
+                    visited_nodes = new[] { "Entrance" },
+                    IsStarterDungeon = true,
+                },
+            },
+            Started = startedUtc,
+            Finished = (string?)null,
+            FinishReason = (string?)null,
+            Wins = 0,
+            Losses = 0,
+            Score = 0,
+            HealthAdj = 0,
+            DungeonLifeAdj = 0,
+            Flags = new Dictionary<string, object>(),
+        });
+    }
+
     public static JsonObject BuildInputResponse(CampaignRunRecord record, bool success = true, JsonNode? stateOverride = null)
     {
         return new JsonObject
@@ -179,24 +301,62 @@ public static class CampaignStateFactory
 
     public static JsonObject BuildCampSummary(CampaignRunRecord record)
     {
+        var type = record.CampaignType.ToUpperInvariant();
+        var campType = CampaignTypeToInt(type);
         var cfg = Race(record.Race);
+
+        string assetBundle;
+        string levelPrefab;
+        string backgroundPrefab;
+        string nodesPrefab;
+        string campaignTemplateId;
+
+        switch (type)
+        {
+            case "DUNGEON":
+                assetBundle = string.Empty;
+                levelPrefab = string.Empty;
+                backgroundPrefab = CampaignCrayburnConfig.DungeonBackgroundPrefab;
+                nodesPrefab = CampaignCrayburnConfig.DungeonNodesPrefab;
+                campaignTemplateId = CampaignCrayburnConfig.DungeonCampaignTemplateId;
+                break;
+            case "QUEST":
+                // QUEST is journal state, not a rendered scene. Keep summary identity
+                // type-correct without assigning panorama/dungeon scene prefabs.
+                assetBundle = string.Empty;
+                levelPrefab = string.Empty;
+                backgroundPrefab = string.Empty;
+                nodesPrefab = string.Empty;
+                campaignTemplateId = CampaignCrayburnConfig.QuestTemplateId;
+                break;
+            default:
+                campType = 6;
+                type = "PANORAMA";
+                assetBundle = cfg.Bundle;
+                levelPrefab = cfg.Prefab;
+                backgroundPrefab = "campaign/tutorial/prefabs/background1";
+                nodesPrefab = string.Empty;
+                campaignTemplateId = "2f59b729-7cdf-4fb4-abc3-5654a644df65";
+                break;
+        }
+
         return ToObject(new
         {
             CampID = record.CampaignId,
             ReckID = new { lo = 0, hi = 0 },
-            CampType = 6,
+            CampType = campType,
             TypeInfo = new
             {
                 Name = record.TemplateName,
-                Type = "PANORAMA",
+                Type = type,
                 Doc = (string?)null,
                 NameExclusive = false,
                 TypeExclusive = false,
-                AssetBundle = cfg.Bundle,
-                LevelPrefab = cfg.Prefab,
-                BackgroundPrefab = "campaign/tutorial/prefabs/background1",
-                NodesPrefab = "",
-                CampaignTemplateId = "2f59b729-7cdf-4fb4-abc3-5654a644df65",
+                AssetBundle = assetBundle,
+                LevelPrefab = levelPrefab,
+                BackgroundPrefab = backgroundPrefab,
+                NodesPrefab = nodesPrefab,
+                CampaignTemplateId = campaignTemplateId,
             },
             TemplateName = record.TemplateName,
             IsDeckEditable = true,
@@ -240,6 +400,51 @@ public static class CampaignStateFactory
                 impassable = false,
                 unknown = false,
                 encounter = (string?)null,
+                encounter_desc = (string?)null,
+                allow_cancel = false,
+                conversationId,
+            },
+        });
+    }
+
+    private static object Node(string name) => new
+    {
+        Name = name,
+        Data = new
+        {
+            id = name,
+            type = "DEFAULT",
+        },
+    };
+
+    private static JsonObject CampaignLocation(
+        string name,
+        string type,
+        string? encounter = null,
+        string? conversationId = null,
+        bool enabled = false,
+        bool visible = false)
+    {
+        return ToObject(new
+        {
+            Data = new
+            {
+                name,
+                node = name,
+                type,
+                autostart = false,
+                autopan = false,
+                autotrigger = false,
+                battle = (object?)null,
+                completed = false,
+                enabled,
+                visible,
+                repeatable = false,
+                givequest = false,
+                turninquest = false,
+                impassable = false,
+                unknown = false,
+                encounter,
                 encounter_desc = (string?)null,
                 allow_cancel = false,
                 conversationId,

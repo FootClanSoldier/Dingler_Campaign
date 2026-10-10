@@ -10,8 +10,8 @@ public sealed class CampaignOptions
     public int DefaultRace { get; init; } = 1;
 
     /// <summary>
-    /// Temporary vertical-slice aid. Current Dingler does not persist/stream PvE champions yet.
-    /// When true, CollectionCacheService can expose one deterministic champion in reckoning_bits.
+    /// Exposes eight deterministic test champions through the normal profile stream
+    /// until original AddChampion/profile persistence is implemented.
     /// </summary>
     public bool BootstrapChampion { get; init; }
     public string BootstrapChampionName { get; init; } = "CampaignTest";

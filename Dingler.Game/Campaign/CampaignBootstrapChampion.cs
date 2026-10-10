@@ -1,4 +1,4 @@
-﻿extern alias HexGame;
+extern alias HexGame;
 using HexGame::Game.Shared;
 using HexGame::Game.Shared.Domain;
 using HexGame::Game.Shared.Mechanics;
@@ -6,7 +6,7 @@ using HexGame::Game.Shared.Mechanics;
 namespace Dingler.Game.Campaign;
 
 /// <summary>
-/// Optional test-only champion used to expose the normal PvE UI path while Dingler's
+/// Test-only champions used to expose the normal PvE UI path while Dingler's
 /// real AddChampion/profile persistence is still unimplemented.
 /// </summary>
 public static class CampaignBootstrapChampion
@@ -17,17 +17,46 @@ public static class CampaignBootstrapChampion
         return unchecked(profileId * 1000UL + (ulong)Math.Clamp(race, 1, 8));
     }
 
+    private static readonly string[] RaceNames =
+    [
+        "", "Human", "Elf", "Coyotle", "Orc", "Dwarf", "Shinhare", "Vennen", "Necrotic",
+    ];
+
+    // Bootstrap champion IDs are derived from the profile ID and HEX's eight ERace values.
+    // Accept the raw ID and the packed UID form used by some profile requests.
+    public static bool TryResolveChampionId(
+        ulong profileId, ulong candidate, out ulong championId, out int race)
+    {
+        for (var value = 1; value <= 8; value++)
+        {
+            var expected = ChampionId(profileId, value);
+            if (candidate != expected && (candidate <= byte.MaxValue || (candidate >> 8) != expected))
+                continue;
+
+            championId = expected;
+            race = value;
+            return true;
+        }
+
+        championId = 0;
+        race = 0;
+        return false;
+    }
+
     public static champion_bits Create(
         ulong profileId,
         CampaignOptions options,
+        int race,
         ulong lastCampaignId = 0,
         ulong lastDeckId = 0,
         IEnumerable<string>? championTalents = null)
     {
-        var race = Math.Clamp(options.DefaultRace, 1, 8);
+        race = Math.Clamp(race, 1, 8);
         var champion = new champion_bits
         {
-            Name = options.BootstrapChampionName,
+            Name = race == 1
+                ? options.BootstrapChampionName
+                : options.BootstrapChampionName + RaceNames[race],
             Id = ChampionId(profileId, race),
             Level = 1,
             CurrentXP = 0,

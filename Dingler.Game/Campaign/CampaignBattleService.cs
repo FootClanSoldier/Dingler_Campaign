@@ -1,4 +1,4 @@
-﻿extern alias HexGame;
+extern alias HexGame;
 
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
@@ -196,7 +196,7 @@ public sealed class CampaignBattleService
         try
         {
             var champion = CampaignBootstrapChampion.Create(
-                context.ProfileId, _options, run.CampaignId, run.LastDeckId, run.ChampionTalents);
+                context.ProfileId, _options, run.Race, run.CampaignId, run.LastDeckId, run.ChampionTalents);
             active.Game = games.CreateCampaignGame(
                 pending.GameId, pending.SessionState.SessionName, pending.SessionState.EncounterData,
                 joined.Human, context.Decks[run.LastDeckId], champion, context.UserName!,

@@ -1,4 +1,4 @@
-﻿extern alias HexGame;
+extern alias HexGame;
 using Dingler.Game.Campaign;
 using Dingler.Server;
 using Dingler.Server.Abstractions;
@@ -35,20 +35,23 @@ public sealed class UpdateChampionDeckIdRequestHandler : IRequestHandler<UpdateC
         if (!_options.BootstrapChampion)
             return;
 
-        var expectedChampionId = CampaignBootstrapChampion.ChampionId(context.ProfileId, _options.DefaultRace);
-        var championId = expectedChampionId;
-        if (CampaignChampionRequestReader.TryReadUInt64(
+        if (!CampaignChampionRequestReader.TryReadUInt64(
                 request, out var requestedChampionId,
                 "ChampionID", "ChampionId", "ChampionUID", "ChampionUid", "ChampID", "ChampId", "Champion"))
         {
-            championId = NormalizeChampionId(requestedChampionId, expectedChampionId);
+            _logger?.LogWarning(
+                "Campaign: {user} sent {requestType} without a champion ID; members: {members}",
+                context.UserName, request.GetType().Name,
+                CampaignChampionRequestReader.DescribePublicMembers(request));
+            return;
         }
 
-        if (championId != expectedChampionId)
+        if (!CampaignBootstrapChampion.TryResolveChampionId(
+                context.ProfileId, requestedChampionId, out var championId, out var race))
         {
             _logger?.LogWarning(
-                "Campaign: {user} tried to update deck for champion {champion}; expected bootstrap champion {expected}",
-                context.UserName, championId, expectedChampionId);
+                "Campaign: {user} tried to update deck for unknown bootstrap champion {champion}",
+                context.UserName, requestedChampionId);
             return;
         }
 
@@ -83,19 +86,10 @@ public sealed class UpdateChampionDeckIdRequestHandler : IRequestHandler<UpdateC
             }
         }
 
-        _store.SetChampionDeck(context.ProfileId, championId, _options.DefaultRace, deckId);
+        _store.SetChampionDeck(context.ProfileId, championId, race, deckId);
         _logger?.LogInformation(
             "Campaign: {user} selected PvE deck {deck} for champion {champion}",
             context.UserName, deckId, championId);
-    }
-
-    private static ulong NormalizeChampionId(ulong candidate, ulong expected)
-    {
-        if (candidate == expected)
-            return candidate;
-
-        // Tolerate a packed UID represented as UInt64 instead of the UID contract.
-        return candidate > byte.MaxValue && (candidate >> 8) == expected ? expected : candidate;
     }
 
     private static ulong NormalizeDeckId(ulong candidate, SessionContext context)
@@ -135,25 +129,23 @@ public sealed class UpdateChampionTalentsRequestHandler : IRequestHandler<Update
         if (!_options.BootstrapChampion)
             return;
 
-        var expectedChampionId = CampaignBootstrapChampion.ChampionId(context.ProfileId, _options.DefaultRace);
-        var championId = expectedChampionId;
-        if (CampaignChampionRequestReader.TryReadUInt64(
+        if (!CampaignChampionRequestReader.TryReadUInt64(
                 request, out var requestedChampionId,
                 "ChampionID", "ChampionId", "ChampionUID", "ChampionUid", "ChampID", "ChampId", "Champion"))
         {
-            if (requestedChampionId == expectedChampionId)
-                championId = requestedChampionId;
-            else if (requestedChampionId > byte.MaxValue && (requestedChampionId >> 8) == expectedChampionId)
-                championId = expectedChampionId;
-            else
-                championId = requestedChampionId;
+            _logger?.LogWarning(
+                "Campaign: {user} sent {requestType} without a champion ID; members: {members}",
+                context.UserName, request.GetType().Name,
+                CampaignChampionRequestReader.DescribePublicMembers(request));
+            return;
         }
 
-        if (championId != expectedChampionId)
+        if (!CampaignBootstrapChampion.TryResolveChampionId(
+                context.ProfileId, requestedChampionId, out var championId, out var race))
         {
             _logger?.LogWarning(
-                "Campaign: {user} tried to update talents for champion {champion}; expected bootstrap champion {expected}",
-                context.UserName, championId, expectedChampionId);
+                "Campaign: {user} tried to update talents for unknown bootstrap champion {champion}",
+                context.UserName, requestedChampionId);
             return;
         }
 
@@ -165,7 +157,7 @@ public sealed class UpdateChampionTalentsRequestHandler : IRequestHandler<Update
             return;
         }
 
-        _store.SetChampionTalents(context.ProfileId, championId, _options.DefaultRace, talents);
+        _store.SetChampionTalents(context.ProfileId, championId, race, talents);
         _logger?.LogInformation(
             "Campaign: {user} stored {count} talent(s) for champion {champion}",
             context.UserName, talents.Count, championId);
