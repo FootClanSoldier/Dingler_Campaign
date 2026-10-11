@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -38,6 +38,10 @@
       <Private Condition="'$(Configuration)' == 'Debug'">true</Private>
       <Private Condition="'$(Configuration)' == 'Release'">false</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Campaign/Definitions/Az1Map.json" LogicalName="Dingler.Game.Campaign.Definitions.Az1Map.json" />
   </ItemGroup>
 
   <ItemGroup>

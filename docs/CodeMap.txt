@@ -20,6 +20,42 @@ Dingler.Server/
 
 Campaign bootstrap and state
 ----------------------------
+AZ1 authored map topology:
+    CampaignAz1MapCatalog and embedded Campaign/Definitions/Az1Map.json store the
+    original-client-derived 85 authored logical locations, 79 physical Unity
+    objects and 83 undirected paths, with inferred variant bindings explicitly
+    distinguished. The physical junction Fork001 and unmapped logical state
+    variants are not projected as actionable AREA locations. The 76 verified
+    direct locations can be projected hidden/disabled, without awarding or
+    enabling their unknown actions. See docs/Research/HEX_AZ1_Original_Map_Catalog_Research.md.
+    CampaignStateFactory.EnsureAz1MapState only adds missing direct entries,
+    preserving save fields and existing node flags. SyncAz1OpeningExitLocks
+    computes complete known map locks; only five implemented opening edges
+    may unlock when their current authored prerequisites are satisfied.
+    CampaignService validates path objects against the catalog, explicitly
+    gates all actual movement by implemented opening locations and map locks,
+    never moves on batched visit_path, and traces AZ1 visibility/lock state.
+    For movement to an authored destination, validates a connected route over
+    unlocked opening edges with previously visited intermediate nodes; revisiting
+    an earlier node may not emit visit_node in the original client, so an
+    adjacent-only last-node test is insufficient.
+    Winning the Dunnwood encounter makes both Node004 and Node007 travelable
+    when their original content templates resolve; capturing Dire Toad advances
+    Tamed independently. Node004 has its original intro/reference-card chooser;
+    Node007 has verified first/repeat Milosh conversations. Closing Milosh's
+    conversation (regardless of optional Fortune purchase) unlocks Node009
+    and its authored Cockatwice prelude/encounter when templates resolve;
+    later outgoing AZ1 paths remain locked. Paid Fortune transactions use
+    an isolated 1000-Gold bootstrap display for testing; no real currency
+    is charged and no Fortune is awarded.
+
+Original client AREA fog-of-war research:
+    docs/Research/HEX_Area_Fog_Of_War_Assembly_Research.md verifies the
+    Location.Visible -> UIDungeonMapNode.IsVisible -> FOW animator path,
+    FOWPostEffect image compositing and prefab dependencies. Live AZ1 terrain
+    FOW is unconfirmed and not a current development requirement; preserve
+    visibility and path-lock gameplay fields, but avoid shader/FOW changes.
+
 Dingler.Game/Campaign/CampaignOptions.cs
     Campaign configuration/defaults.
 
@@ -27,8 +63,70 @@ Dingler.Game/Campaign/CampaignRaceConfig.cs
     Data shape for race-specific starter panorama metadata.
 
 Dingler.Game/Campaign/CampaignStateFactory.cs
-    Builds client-facing GameplayState/CampSummary/InputResponse structures for
-    starter PANORAMA, Crayburn QUEST journal state and Crayburn DUNGEON state.
+    Builds client-facing GameplayState/CampSummary/InputResponse for PANORAMA,
+    Crayburn QUEST/DUNGEON and AZ1 AREA. The AREA opening is initially limited
+    to Node001/002/003 plus authored Node004/007 and Node009 exits. EnsureAz1MapState
+    idempotently adds missing directly mapped AZ1 locations hidden and disabled,
+    without overwriting saves, location actions or quest/encounter progression.
+    PrepareAz1Welcome/Dunnwood/Sporemist resolve original authored opening
+    conversations and encounters. Sporemist projects the original Convo ->
+    ShroomHaus (choices, selection-type, selection-desc) -> completed flow
+    while retaining existing visit and completion state.
+    HasWonAz1Bear tracks victory separately from quest capture/completion,
+    including a bounded recovery from retryable winning saves. Gaal Camp is
+    hydrated with its original first/repeat/fortune-state dialogue IDs when
+    validated in live TemplateManager. PrepareAz1Sutherland binds the original
+    Cockatwice prelude and capture-gated encounter, preserving prelude/completed state on
+    rehydration. SyncAz1OpeningExitLocks maintains all 83 original paths;
+    only five supported opening paths may unlock.
+    It also constructs AZ1 QUEST journal states, repairs legacy Node002 ALoc
+    and builds AREA summary with original background/nodes prefab identities.
+    PreparePostCrayburnTravel retains the PANORAMA when opening AZ1 travel.
+
+Dingler.Game/Campaign/CampaignAz1Config.cs
+    AZ1 summary identity, verified opening locations and opening-only action/
+    travel gate identifiers. Not the full original map graph.
+
+Dingler.Game/Campaign/CampaignAz1MapCatalog.cs
+Dingler.Game/Campaign/Definitions/Az1Map.json
+    Read-only embedded original-client AZ1 topology. The registry is not an
+    unlock schedule; direct authored location mapping is separate from the
+    inferred variant families (Node019/023/026) and Unity-only junctions.
+    Project file explicitly embeds JSON to avoid external release data paths.
+
+Dingler.Game/Campaign/CampaignAz1AuthoredCatalog.cs
+    Resolves the original HEX SceneData Wild Cub encounter and Feralroot Bear
+    first-visit conversation for Dunnwood from TemplateManager at runtime;
+    also resolves Tamed plus the faction-specific Find quest's template identity
+    and ordered objectives. The NODE 04 Shroom Haus scene and first-visit
+    ConversationTemplate are independently required and resolved from the
+    live original TemplateManager, with read-only candidate diagnostics when
+    names are ambiguous. Ambiguous or absent source data is rejected.
+
+    The original Node009 Cockatwice Chick scene/conversation identities also
+    resolve at runtime by GUID plus authored name, failing closed if missing.
+
+Dingler.Game/Campaign/CampaignShroomRewardCatalog.cs
+    Three provisional Node004 offers from Ian's AssetExtraction/gamedata_seed.py
+    seed configuration, not proven original server rewards. Confirms that
+    these template GUIDs resolve to ownable original HEX cards and builds the
+    campaign Applied.Cards/Completed response for a single selected reward.
+
+Dingler.Game/Services/CollectionCacheService.cs
+    Initializes a shared baseline collection and reserved stable ID slots for
+    the three possible Shroom choices across eight bootstrap champions.
+    On profile stream, appends only rewards persisted in that profile's
+    campaign aggregate; receipt is sent via Applied on first claim.
+
+Dingler.Game/Campaign/CampaignRunStore.cs
+    Keeps the Shroom offer/claim check, chosen GUID, completion and AREA save
+    atomic under the existing champion persistence gate; reads saved reward
+    receipts for the profile collection stream without creating champions.
+
+Dingler.Game/Campaign/CampaignAz1OpeningCatalog.cs
+    Reads original HEX ConversationTemplates via TemplateManager to select the
+    faction-specific Node002 welcome dialogue (Belarius or Takumi); refuses
+    ambiguous or missing authored data instead of substituting a guessed GUID.
 
 Dingler.Game/Campaign/CampaignCrayburnConfig.cs
     Static authored Crayburn metadata: original QuestTemplate identity/objectives,
@@ -40,14 +138,22 @@ Dingler.Game/Campaign/CampaignChampionRun.cs
     CurrentCampaignId and the collection of independent campaign instances.
 
 Dingler.Game/Campaign/CampaignRunRecord.cs
-    One PANORAMA/QUEST/DUNGEON campaign instance with stable CampID + GameplayState.
+    One PANORAMA/QUEST/DUNGEON/AREA instance with stable CampID + GameplayState.
     Champion ownership/deck/talents are projected from CampaignChampionRun.
 
 Dingler.Game/Campaign/CampaignRunStore.cs
     Campaign persistence boundary. Migrates the legacy single-record JSON shape to
     aggregate format v2, resolves current scene/reconnect state, enumerates active
     campaigns by type and atomically commits P/Q/D entry and Crayburn-completion
-    handoffs, plus final QUEST/report-PANORAMA turn-in, preserving stable CampIDs.
+    handoffs, plus final QUEST/report-PANORAMA turn-in and authenticated
+    post-Crayburn PANORAMA -> AREA travel. Travel is idempotent and requires
+    finished linked QUEST Step2, active race travel NPC and current PANORAMA.
+    Existing AREA is reused without regenerating its GameplayState or CampID.
+    Ensures the two AZ1 opening QUEST children idempotently and commits both
+    their creation and the validated AREA conversation completion in one
+    champion aggregate, retaining current AREA identity.
+    On loading a completed report from an earlier saved aggregate, repairs its
+    missing travel-NPC state once and atomically saves the same champion file.
     Finished quests are excluded from getactive while getcampstate remains addressable.
 
 Dingler.Game/Campaign/CampaignBootstrapChampion.cs
@@ -59,13 +165,32 @@ Dingler.Game/Campaign/CampaignBootstrapChampion.cs
 Dingler.Game/Campaign/CampaignChampionRequestReader.cs
     Reads campaign champion update request data from original HEX request types.
 
+Dingler.Game/Campaign/CampaignEncounterDiagnostics.cs
+    Captures the original HEX Wild Cub versus known-playable Crayburn
+    EncounterScene at campaign engine initialization failure. Its failure JSON
+    includes read-only dependency and original IL metadata audits; it never
+    patches gameplay or mutates original templates.
+
+Dingler.Game/Campaign/CampaignEncounterDependencyDiagnostics.cs
+    Resolves original loaded EncounterDeck -> DeckTemplate references, scene
+    modifier ResourceIds and encounter-start card-effect IDs for the failed
+    scene and the working comparison. Unresolved diagnostic lookups are evidence
+    for investigation, not an automatic reason to substitute a scene or deck.
+
+Dingler.Game/Campaign/CampaignEncounterIlDiagnostics.cs
+    Inspects the installed HEX AuthoritativeSessionBase.InitEncounter method's
+    managed IL metadata references (bounded calls/field access at IL offsets)
+    on campaign failure; read-only, no runtime detours or game-engine patching.
+
 Dingler.Game/Campaign/CampaignQuestTemplateDiagnostics.cs
     Research-only startup diagnostic over the original HEX TemplateManager. After
     client gamedata has loaded, it locates QuestTemplate collections by reflection,
     indexes the available quest templates, and writes full authored-member/objective
     detail for Crayburn-named candidates to
-    <Campaign:StorePath>/diagnostics/quest-templates-crayburn.json. Diagnostic
-    failure is logged and never blocks server startup.
+    <Campaign:StorePath>/diagnostics/quest-templates-crayburn.json. Additionally
+    dumps the three authored AZ1 opening quest templates and objectives to
+    diagnostics/az1-opening-quest-templates.json. Diagnostic failure is logged
+    and never blocks server startup.
 
 Campaign service / ServiceCampaign protocol
 -------------------------------------------
@@ -78,7 +203,48 @@ Dingler.Game/Campaign/CampaignService.cs
     success completion advances the castle (or completes it at PenworthTower) and failure
     completion restores the encounter for retry. Race-specific quest-giver report
     conv_done atomically finishes Step2/QUEST and the returned PANORAMA NPC state,
-    with non-transitioning QUEST and PANORAMA cmpupdates. Battle simulation stays elsewhere.
+    with non-transitioning QUEST and PANORAMA cmpupdates. The completed report
+    also exposes the race intro NPC's distinct Feralroot travel conversation;
+    closing it never restarts the tutorial. An explicit choice_go during the
+    completed quest travel conversation atomically selects one AZ1 AREA and
+    queues its transition; choice_stay leaves PANORAMA unchanged. AREA queries
+    and limited Node001/Node002/Node003 travel use distinct persisted state.
+    Its path-name validation uses the full embedded original prefab graph, but
+    only implemented opening nodes may be entered. Batched visit_path does not
+    move the champion; unknown/locked path events are ignored. Debug/info
+    snapshots include visible/enabled nodes and visited/locked path counts.
+    For AREA StartLoc, ALoc identifies the authored VisLoc Data.name while
+    LastNode and visited_nodes identify the original map-node ID. AREA Node002
+    conv_done accepts both the current location name and the legacy Node002 ID;
+    successful authored welcome completion reveals Dunnwood via a non-transition
+    cmpupdate. Repeated identical StartLoc requests do not rewrite state, and
+    the first effective StartLoc logs its active identity and conversation.
+    Completion of the verified AZ1 welcome spawns Tamed and the faction's
+    authored Find quest through campspawn. Dunnwood first presents its original
+    Feralroot Bear prelude, then exposes the Wild Cub encounter through the
+    existing Dingler/original HEX battle flow. Authoritative game-end updates
+    Dunnwood and reveals its two authored neighboring nodes on victory, but
+    opens both authored exits on first battle win, using independent native
+    scene/conversation checks for the destination actions. Later losses do not
+    relock the exits, and an uncaptured victory remains retryable through Explore.
+    Node007's original Milosh first/repeat dialogue is available, but its paid
+    gaal_camp_accept event is accepted only within the active verified Milosh
+    first/repeat dialogue. Under an explicit temporary development exception,
+    the choice lets the original dialogue continue without a real debit or
+    Fortune grant. conv_done clears pending choice state, restores the repeat dialogue,
+    and reveals authored Node009 independent of a Fortune purchase. Node009
+    prelude conv_done prepares its original encounter; the usual Dingler/HEX
+    battle session must win with native Chickatwice capture AND current QUEST
+    Tame2 to advance Tame3 and complete Node009. Loss or a win without matching
+    capture retains a retryable encounter, without unlocking
+    unimplemented onward paths or fabricating encounter rewards. Separately, Node004's introduction conv_done retains ALoc
+    and returns an original-client ShroomHaus selector with three verified
+    reference-template GUIDs. shroom_choice validates the active offer,
+    persists one choice, returns an Applied card reward and prevents replay.
+    Loss preserves retryability. Genuine AREA Empty locations consume
+    empty_done once; stale Dunnwood empty_done cannot complete the encounter.
+    Later AZ1 encounters beyond Node009, conditional taming outcomes, rewards
+    and map nodes remain separate. Battle simulation stays elsewhere.
 
 Dingler.Game/Handlers/Request/Campaign/CampaignSystemRequestHandler.cs
     ServiceCampaign CampSysGeneral request entry point.
@@ -94,8 +260,12 @@ Dingler.Game/Handlers/Request/Profile/CampaignChampionProfileRequestHandlers.cs
 
 Dingler.Game/Services/CollectionCacheService.cs
     Streams all eight test champions through the normal collection/profile cache.
+    For PvE bootstrap profiles only, advertises a temporary non-authoritative
+    1000 development Gold to satisfy the original Milosh 100 Gold prerequisite
+    (the client uses a strict greater-than comparison). This is not
+    persisted or spendable and must be replaced by account currency ownership.
     Each champion's LastCampaignID follows its own aggregate CurrentCampaignId scene
-    (PANORAMA or DUNGEON); missing/deleted LastDeckID is cleared only for that
+    (PANORAMA, DUNGEON or AREA); missing/deleted LastDeckID is cleared only for that
     champion, while deck/talents remain independently champion-owned.
 
 Protocol and response ordering
@@ -118,11 +288,31 @@ Dingler.Server/DinglerClient.cs
 
 Campaign battle bridge
 ----------------------
+AZ1 Dunnwood capture-gated progression:
+    CampaignService.ApplyBattleResult accepts native captured-card template GUIDs
+    alongside the win/loss result. It completes Dunnwood and QUEST az01_tamed's
+    matching Tame1 objective only after a win plus a native Dire Toad capture
+    (CardTemplate c0bb008e-17c5-4e73-baf9-5cbd8f3eb6dc from live HEX logs).
+    Uncaptured wins retain an enabled, retryable encounter; a separate
+    bear_defeated receipt latches both Node003 exits after any victory, and is
+    not cleared by a later loss. AZ1 hydration repairs qualifying saved states
+    without inferring victories from merely visible nodes. AREA and QUEST are
+    persisted in the same champion file
+    with one CampaignRunStore.Save; the client receives gameendnotify and a
+    separate QUEST cmpupdate (Reason=quest_progress, Transition=false).
+    Further Tamed encounters/rewards are not implemented by this change.
+
 Dingler.Game/Campaign/CampaignBattleService.cs
     Owns campaign StartEncounter reservations, JoinSession validation and active
     campaign battle tracking. Validates camp_<CampaignID>, ActiveEncounterGuid,
     champion and selected PvE deck. Finished results are forwarded to CampaignService
-    for progression. It must remain separate from ArenaBattleService.
+    for progression. At the live GameEnded callback, reads original HEX
+    TamedCards receipts and passes resolved original template GUIDs with win/loss
+    to CampaignService. Duplicate end callbacks are ignored for the same battle.
+    It must remain separate from ArenaBattleService.
+
+    A failed original InitEncounter produces a read-only HEX SceneData
+    comparison via CampaignEncounterDiagnostics before JoinSession refusal.
 
 Dingler.Game/Handlers/Request/Arena/ArenaBattleRequestHandlers.cs
     Shared LoadBalancer/session protocol surface. Routes StartEncounter,
@@ -193,7 +383,7 @@ Human final Crayburn completion handoff (verified in 2026-10-10 runtime log):
          then PANORAMA cmpupdate Transition=true.
     PenworthTower defeat continues to use the already verified defeat/retry state model.
 
-Report completion (implementation pending first live client verification):
+Report completion (server and original-client effect verified 2026-10-10):
     race quest NPC report conv_done with matching race-authored quest-end GUID,
     QUEST Step1 completed and Step2 pending
       -> atomic QUEST Step2 completed, Finished timestamp, FinishReason=Complete
@@ -201,6 +391,12 @@ Report completion (implementation pending first live client verification):
       -> current panorama remains selected; quest no longer appears in getactive
       -> QUEST cmpupdate Transition=false then PANORAMA cmpupdate Transition=false.
     Duplicate/stale conv_done cannot grant a second turn-in; no rewards yet.
+    Original client verified journal quest and quest NPC disappear. The
+    next race-specific introductory NPC travel conversation is now offered in
+    the same panorama; its client rendering/choice event awaits live validation.
+    AREA transition is not yet implemented. Reconnecting a saved completed
+    Phase 2.9 report repairs the travel NPC without touching quest completion.
+    See docs/Research/Post_Crayburn_AZ1_Handoff.txt.
 
 Campaign game creation binds the human player UID to the authenticated username;
 network delivery must not infer the account from the campaign champion display name.
@@ -214,6 +410,12 @@ Dingler.Game/Games/GameManager.cs
     to the authenticated account name used by SessionManager. Campaign progression
     is invoked only after HexGameWrapper.RunGameAsync returns, so the final battle
     session events flush before ServiceCampaign game-end notification.
+    At the campaign-only CreateCampaignGame boundary, initializes
+    SessionStateEncounterData.AbilitiesToRun when absent on the client-returned
+    StartEncounter payload. Original HEX InitEncounter appends authored scene
+    modifier abilities to this list before loading players/decks; existing
+    client-supplied ability IDs must be preserved. Does not affect Arena.
+
 
 Dingler.Game/Games/HexGameWrapper.cs
     Queues and delivers original-HEX game events to connected clients. Supports
@@ -226,6 +428,10 @@ Dingler.Game/Games/HexRulesEngine.Campaign.cs
     Campaign-specific seam into original HEX PvE initialization. Supplies the
     persisted campaign champion/deck through HasDeckAndChampInfo-compatible data
     and lets original IsEncounter|IsPvE behavior resolve the encounter scene/AI.
+    Its campaign-only end-of-game reader inspects the human champion's native
+    PermanentData/TamedCards capture receipts, resolves their SessionCardIds via
+    original SessionCardCache, logs details and returns only verified original
+    template GUIDs. It does not itself advance quests or grant captured cards.
 
 Dingler.Game/Games/HexRulesEngine.Arena.cs
     Frost Ring-specific engine bootstrap. Do not change for campaign merely to
@@ -263,3 +469,19 @@ Important campaign invariants
 - The original HEX rules/AI path is preferred over custom battle/rules ports.
 - Campaign battle results must be applied by the campaign layer after the final game
   session events have flushed, then delivered as ServiceCampaign state updates.
+
+AZ1 entry protocol (first testable slice; live client validation pending):
+    completed Crayburn QUEST Step2 + retained PANORAMA
+      -> CaptainCedric/race IntroNpc authored travel conversation
+      -> verified client event choice_go (or choice_stay)
+      -> choice_go: atomic AREA creation/resume + CurrentCampaignId change
+      -> normal PANORAMA response first
+      -> FIFO unsolicited AREA cmpupdate (feralroot_travel, Transition=true)
+      -> client fetches AREA summary (CampType 2, campaign/azmap/azmap,
+         campaign/az01/nodes) and original client renders its map
+      -> AREA begins at Node001 Into The Woods; Node002 initially visible.
+    choice_stay does not create AREA. After the choice_go notification, the
+    client may still send conv_done for the old PANORAMA; its response never
+    reassigns CurrentCampaignId away from AREA. qcur4champ and profile
+    LastCampaignID resolve AREA across restarts. Only opening map topology is
+    currently modeled; no unverified Node002 dialogue/quest is seeded.

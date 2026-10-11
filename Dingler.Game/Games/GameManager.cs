@@ -217,6 +217,14 @@ public sealed class GameManager : IDisposable
 		UID aiId,
 		Action<HexRulesEngine, List<UID>, List<UID>> onGameEnded)
 	{
+		// StartEncounter returns a client-owned data instance. The original HEX encounter
+		// initializer appends authored scene modifiers to this collection before loading players.
+		var abilitiesWereMissing = encounterData.AbilitiesToRun is null;
+		encounterData.AbilitiesToRun ??= new List<ResourceId>();
+		_logger?.LogInformation(
+			"Campaign battle {MatchId} scene={Scene} AbilitiesToRun incomingNull={IncomingNull} count={Count}",
+			gameId, encounterData.SceneTemplateId, abilitiesWereMissing, encounterData.AbilitiesToRun.Count);
+
 		var engine = new HexRulesEngine(sessionName, new UID(UID.Type.AuthoritativeSession, gameId),
 			_loggerFactory?.CreateLogger<HexRulesEngine>())
 		{

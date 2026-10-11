@@ -1,0 +1,1251 @@
+{
+  "source": "Original HEX 1.1.0.086 SceneData and AZ1 Unity map prefab; see Research.zip/HEX_Client_ReverseEngineering/data/az1_authored_visual_mapping.json",
+  "campaignId": "742c6fc1-77e5-4029-bf9e-4e8af387857a",
+  "authored": [
+    {
+      "id": "Node001",
+      "title": "Into The Woods",
+      "physicalId": "Node001",
+      "direct": true
+    },
+    {
+      "id": "Node002",
+      "title": "North Feralroot Woods",
+      "physicalId": "Node002",
+      "direct": true
+    },
+    {
+      "id": "Node003",
+      "title": "Dunnwood",
+      "physicalId": "Node003",
+      "direct": true
+    },
+    {
+      "id": "Node004",
+      "title": "Sporemist Hollow",
+      "physicalId": "Node004",
+      "direct": true
+    },
+    {
+      "id": "Node005",
+      "title": "Fonferek Thicket",
+      "physicalId": "Node005",
+      "direct": true
+    },
+    {
+      "id": "Node006",
+      "title": "Horwich Sea",
+      "physicalId": "Node006",
+      "direct": true
+    },
+    {
+      "id": "Node007",
+      "title": "The Road of Oaks",
+      "physicalId": "Node007",
+      "direct": true
+    },
+    {
+      "id": "Node008",
+      "title": "The Bleak Citadel",
+      "physicalId": "Node008",
+      "direct": true
+    },
+    {
+      "id": "Node009",
+      "title": "The Sutherland",
+      "physicalId": "Node009",
+      "direct": true
+    },
+    {
+      "id": "Node00R",
+      "title": "Vale of Oberon",
+      "physicalId": "Node00R",
+      "direct": true
+    },
+    {
+      "id": "Node00X",
+      "title": "Short Cut",
+      "physicalId": "Node00X",
+      "direct": true
+    },
+    {
+      "id": "Node00Y",
+      "title": "River of Whispers",
+      "physicalId": "Node00Y",
+      "direct": true
+    },
+    {
+      "id": "Node00Z",
+      "title": "River of Whispers",
+      "physicalId": "Node00Z",
+      "direct": true
+    },
+    {
+      "id": "Node010",
+      "title": "Sylvan Peninsula",
+      "physicalId": "Node010",
+      "direct": true
+    },
+    {
+      "id": "Node011",
+      "title": "Fort Romor",
+      "physicalId": "Node011",
+      "direct": true
+    },
+    {
+      "id": "Node012",
+      "title": "Bridge over the Zila - East",
+      "physicalId": "Node012",
+      "direct": true
+    },
+    {
+      "id": "Node013",
+      "title": "Zila River",
+      "physicalId": "Node013",
+      "direct": true
+    },
+    {
+      "id": "Node014",
+      "title": "Razortooth Forest",
+      "physicalId": "Node014",
+      "direct": true
+    },
+    {
+      "id": "Node015",
+      "title": "Bridge over the Zila - West",
+      "physicalId": "Node015",
+      "direct": true
+    },
+    {
+      "id": "Node016",
+      "title": "The Road of Grass",
+      "physicalId": "Node016",
+      "direct": true
+    },
+    {
+      "id": "Node017",
+      "title": "Cave-In",
+      "physicalId": "Node017",
+      "direct": true
+    },
+    {
+      "id": "Node018",
+      "title": "Shadowgrove",
+      "physicalId": "Node018",
+      "direct": true
+    },
+    {
+      "id": "Node019",
+      "title": "Brink Ridge",
+      "physicalId": "Node019",
+      "direct": true
+    },
+    {
+      "id": "Node019B",
+      "title": "Brink Ridge",
+      "physicalId": "Node019",
+      "direct": false
+    },
+    {
+      "id": "019B1",
+      "title": "Brink Ridge",
+      "physicalId": "Node019",
+      "direct": false
+    },
+    {
+      "id": "Node019B2",
+      "title": "Brink Ridge",
+      "physicalId": "Node019",
+      "direct": false
+    },
+    {
+      "id": "019B3",
+      "title": "Brink Ridge",
+      "physicalId": "Node019",
+      "direct": false
+    },
+    {
+      "id": "Node019C",
+      "title": "Brink Ridge",
+      "physicalId": "Node019",
+      "direct": false
+    },
+    {
+      "id": "Node020",
+      "title": "Dreamsmoke Prairie",
+      "physicalId": "Node020",
+      "direct": true
+    },
+    {
+      "id": "Node021",
+      "title": "Clark Foothills",
+      "physicalId": "Node021",
+      "direct": true
+    },
+    {
+      "id": "Node022",
+      "title": "Lake Wyalusing",
+      "physicalId": "Node022",
+      "direct": true
+    },
+    {
+      "id": "Node023A",
+      "title": "Saramago Crater",
+      "physicalId": "Node023",
+      "direct": false
+    },
+    {
+      "id": "Node023B",
+      "title": "Saramago Crater",
+      "physicalId": "Node023",
+      "direct": false
+    },
+    {
+      "id": "Node024",
+      "title": "Tomb of the Rose Knights",
+      "physicalId": "Node024",
+      "direct": true
+    },
+    {
+      "id": "Node025",
+      "title": "Lena Grotto",
+      "physicalId": "Node025",
+      "direct": true
+    },
+    {
+      "id": "Node026A",
+      "title": "Johannes Bog",
+      "physicalId": "Node026",
+      "direct": false
+    },
+    {
+      "id": "Node026B",
+      "title": "Johannes Bog",
+      "physicalId": "Node026",
+      "direct": false
+    },
+    {
+      "id": "Node027",
+      "title": "Silver Forest",
+      "physicalId": "Node027",
+      "direct": true
+    },
+    {
+      "id": "Node028",
+      "title": "Garden of Ophelia",
+      "physicalId": "Node028",
+      "direct": true
+    },
+    {
+      "id": "Node029",
+      "title": "Hoff Mines",
+      "physicalId": "Node029",
+      "direct": true
+    },
+    {
+      "id": "Node030",
+      "title": "Bridge over the Zodiac - East",
+      "physicalId": "Node030",
+      "direct": true
+    },
+    {
+      "id": "Node031",
+      "title": "Zodiac River",
+      "physicalId": "Node031",
+      "direct": true
+    },
+    {
+      "id": "Node032",
+      "title": "Zodiac River - North",
+      "physicalId": "Node032",
+      "direct": true
+    },
+    {
+      "id": "Node033",
+      "title": "Indigo River",
+      "physicalId": "Node033",
+      "direct": true
+    },
+    {
+      "id": "Node034",
+      "title": "Ambling Mesa",
+      "physicalId": "Node034",
+      "direct": true
+    },
+    {
+      "id": "Node035",
+      "title": "Uuug's Oasis",
+      "physicalId": "Node035",
+      "direct": true
+    },
+    {
+      "id": "Node037",
+      "title": "Blood Gate",
+      "physicalId": "Node037",
+      "direct": true
+    },
+    {
+      "id": "Node038",
+      "title": "Bridge over the Zodiac - West",
+      "physicalId": "Node038",
+      "direct": true
+    },
+    {
+      "id": "Node039",
+      "title": "Moonrise Canyon",
+      "physicalId": "Node039",
+      "direct": true
+    },
+    {
+      "id": "Node040",
+      "title": "Indigo River Bend",
+      "physicalId": "Node040",
+      "direct": true
+    },
+    {
+      "id": "Node041",
+      "title": "Sunsoul Basin",
+      "physicalId": "Node041",
+      "direct": true
+    },
+    {
+      "id": "Node042",
+      "title": "Bauer Dunes",
+      "physicalId": "Node042",
+      "direct": true
+    },
+    {
+      "id": "Node044",
+      "title": "Wildwood",
+      "physicalId": "Node044",
+      "direct": true
+    },
+    {
+      "id": "Node045",
+      "title": "The Burk Heart",
+      "physicalId": "Node045",
+      "direct": true
+    },
+    {
+      "id": "Node046",
+      "title": "Barking Forest",
+      "physicalId": "Node046",
+      "direct": true
+    },
+    {
+      "id": "Node047",
+      "title": "Indigo Plains",
+      "physicalId": "Node047",
+      "direct": true
+    },
+    {
+      "id": "Node048",
+      "title": "The Road of Sand",
+      "physicalId": "Node048",
+      "direct": true
+    },
+    {
+      "id": "Node049",
+      "title": "The Thunderfield",
+      "physicalId": "Node049",
+      "direct": true
+    },
+    {
+      "id": "Node050",
+      "title": "Crescent Mesa",
+      "physicalId": "Node050",
+      "direct": true
+    },
+    {
+      "id": "Node051",
+      "title": "Startouched Valley",
+      "physicalId": "Node051",
+      "direct": true
+    },
+    {
+      "id": "Node052",
+      "title": "Badlands",
+      "physicalId": "Node052",
+      "direct": true
+    },
+    {
+      "id": "Node053",
+      "title": "South Desert",
+      "physicalId": "Node053",
+      "direct": true
+    },
+    {
+      "id": "Node054",
+      "title": "Southern Stretch",
+      "physicalId": "Node054",
+      "direct": true
+    },
+    {
+      "id": "Node055",
+      "title": "Deep Desert",
+      "physicalId": "Node055",
+      "direct": true
+    },
+    {
+      "id": "Node056",
+      "title": "Northern Stretch",
+      "physicalId": "Node056",
+      "direct": true
+    },
+    {
+      "id": "Node057",
+      "title": "North Desert",
+      "physicalId": "Node057",
+      "direct": true
+    },
+    {
+      "id": "Node058",
+      "title": "Northeast Desert",
+      "physicalId": "Node058",
+      "direct": true
+    },
+    {
+      "id": "Node059",
+      "title": "East Desert",
+      "physicalId": "Node059",
+      "direct": true
+    },
+    {
+      "id": "Node060",
+      "title": "Southeast Desert",
+      "physicalId": "Node060",
+      "direct": true
+    },
+    {
+      "id": "Node061",
+      "title": "Northwest Desert",
+      "physicalId": "Node061",
+      "direct": true
+    },
+    {
+      "id": "Node062",
+      "title": "West Desert",
+      "physicalId": "Node062",
+      "direct": true
+    },
+    {
+      "id": "Node063",
+      "title": "Southwest Desert",
+      "physicalId": "Node063",
+      "direct": true
+    },
+    {
+      "id": "Node064",
+      "title": "The Scar",
+      "physicalId": "Node064",
+      "direct": true
+    },
+    {
+      "id": "Node065",
+      "title": "Sky'le Tepui",
+      "physicalId": "Node065",
+      "direct": true
+    },
+    {
+      "id": "Node066",
+      "title": "Forsaken Plateau",
+      "physicalId": "Node066",
+      "direct": true
+    },
+    {
+      "id": "Node067",
+      "title": "Devonshire Hills",
+      "physicalId": "Node067",
+      "direct": true
+    },
+    {
+      "id": "Node068",
+      "title": "Devonshire Keep",
+      "physicalId": "Node068",
+      "direct": true
+    },
+    {
+      "id": "Node069",
+      "title": "Painted Woods",
+      "physicalId": "Node069",
+      "direct": true
+    },
+    {
+      "id": "Node070",
+      "title": "Steepdale",
+      "physicalId": "Node070",
+      "direct": true
+    },
+    {
+      "id": "Node071",
+      "title": "Valley of Sighs",
+      "physicalId": "Node071",
+      "direct": true
+    },
+    {
+      "id": "Node073",
+      "title": "Sapphire Gate",
+      "physicalId": "Node073",
+      "direct": true
+    },
+    {
+      "id": "Node074",
+      "title": "Dusk Hollow",
+      "physicalId": "Node074",
+      "direct": true
+    },
+    {
+      "id": "Node075",
+      "title": "Eagle Mesa",
+      "physicalId": "Node075",
+      "direct": true
+    },
+    {
+      "id": "Node077",
+      "title": "Blau Flats",
+      "physicalId": "Node077",
+      "direct": true
+    },
+    {
+      "id": "Node078",
+      "title": "Skittering Ridge",
+      "physicalId": "Node078",
+      "direct": true
+    }
+  ],
+  "visual": [
+    {
+      "id": "Node001",
+      "kind": "location"
+    },
+    {
+      "id": "Node002",
+      "kind": "location"
+    },
+    {
+      "id": "Node003",
+      "kind": "location"
+    },
+    {
+      "id": "Node004",
+      "kind": "location"
+    },
+    {
+      "id": "Node005",
+      "kind": "location"
+    },
+    {
+      "id": "Node008",
+      "kind": "location"
+    },
+    {
+      "id": "Node006",
+      "kind": "location"
+    },
+    {
+      "id": "Node007",
+      "kind": "location"
+    },
+    {
+      "id": "Node009",
+      "kind": "location"
+    },
+    {
+      "id": "Node010",
+      "kind": "location"
+    },
+    {
+      "id": "Node011",
+      "kind": "location"
+    },
+    {
+      "id": "Node012",
+      "kind": "location"
+    },
+    {
+      "id": "Node013",
+      "kind": "location"
+    },
+    {
+      "id": "Node015",
+      "kind": "location"
+    },
+    {
+      "id": "Node014",
+      "kind": "location"
+    },
+    {
+      "id": "Node017",
+      "kind": "location"
+    },
+    {
+      "id": "Node016",
+      "kind": "location"
+    },
+    {
+      "id": "Node018",
+      "kind": "location"
+    },
+    {
+      "id": "Node019",
+      "kind": "location"
+    },
+    {
+      "id": "Node020",
+      "kind": "location"
+    },
+    {
+      "id": "Node022",
+      "kind": "location"
+    },
+    {
+      "id": "Node021",
+      "kind": "location"
+    },
+    {
+      "id": "Node023",
+      "kind": "location"
+    },
+    {
+      "id": "Node024",
+      "kind": "location"
+    },
+    {
+      "id": "Node029",
+      "kind": "location"
+    },
+    {
+      "id": "Node025",
+      "kind": "location"
+    },
+    {
+      "id": "Node026",
+      "kind": "location"
+    },
+    {
+      "id": "Node027",
+      "kind": "location"
+    },
+    {
+      "id": "Node028",
+      "kind": "location"
+    },
+    {
+      "id": "Node030",
+      "kind": "location"
+    },
+    {
+      "id": "Node031",
+      "kind": "location"
+    },
+    {
+      "id": "Node035",
+      "kind": "location"
+    },
+    {
+      "id": "Node032",
+      "kind": "location"
+    },
+    {
+      "id": "Node033",
+      "kind": "location"
+    },
+    {
+      "id": "Node034",
+      "kind": "location"
+    },
+    {
+      "id": "Node037",
+      "kind": "location"
+    },
+    {
+      "id": "Node038",
+      "kind": "location"
+    },
+    {
+      "id": "Node039",
+      "kind": "location"
+    },
+    {
+      "id": "Node041",
+      "kind": "location"
+    },
+    {
+      "id": "Node040",
+      "kind": "location"
+    },
+    {
+      "id": "Node042",
+      "kind": "location"
+    },
+    {
+      "id": "Node044",
+      "kind": "location"
+    },
+    {
+      "id": "Node045",
+      "kind": "location"
+    },
+    {
+      "id": "Node046",
+      "kind": "location"
+    },
+    {
+      "id": "Node048",
+      "kind": "location"
+    },
+    {
+      "id": "Node047",
+      "kind": "location"
+    },
+    {
+      "id": "Node049",
+      "kind": "location"
+    },
+    {
+      "id": "Node050",
+      "kind": "location"
+    },
+    {
+      "id": "Node051",
+      "kind": "location"
+    },
+    {
+      "id": "Node052",
+      "kind": "location"
+    },
+    {
+      "id": "Node057",
+      "kind": "location"
+    },
+    {
+      "id": "Node053",
+      "kind": "location"
+    },
+    {
+      "id": "Node054",
+      "kind": "location"
+    },
+    {
+      "id": "Node055",
+      "kind": "location"
+    },
+    {
+      "id": "Node056",
+      "kind": "location"
+    },
+    {
+      "id": "Node059",
+      "kind": "location"
+    },
+    {
+      "id": "Node058",
+      "kind": "location"
+    },
+    {
+      "id": "Node060",
+      "kind": "location"
+    },
+    {
+      "id": "Node061",
+      "kind": "location"
+    },
+    {
+      "id": "Node062",
+      "kind": "location"
+    },
+    {
+      "id": "Node064",
+      "kind": "location"
+    },
+    {
+      "id": "Node063",
+      "kind": "location"
+    },
+    {
+      "id": "Node065",
+      "kind": "location"
+    },
+    {
+      "id": "Node067",
+      "kind": "location"
+    },
+    {
+      "id": "Node066",
+      "kind": "location"
+    },
+    {
+      "id": "Node068",
+      "kind": "location"
+    },
+    {
+      "id": "Node070",
+      "kind": "location"
+    },
+    {
+      "id": "Node069",
+      "kind": "location"
+    },
+    {
+      "id": "Node071",
+      "kind": "location"
+    },
+    {
+      "id": "Node073",
+      "kind": "location"
+    },
+    {
+      "id": "Node074",
+      "kind": "location"
+    },
+    {
+      "id": "Node075",
+      "kind": "location"
+    },
+    {
+      "id": "Node077",
+      "kind": "location"
+    },
+    {
+      "id": "Node078",
+      "kind": "location"
+    },
+    {
+      "id": "Node00Z",
+      "kind": "location"
+    },
+    {
+      "id": "Node00R",
+      "kind": "location"
+    },
+    {
+      "id": "Node00X",
+      "kind": "location"
+    },
+    {
+      "id": "Node00Y",
+      "kind": "location"
+    },
+    {
+      "id": "Fork001",
+      "kind": "fork"
+    }
+  ],
+  "paths": [
+    {
+      "id": "Path_Fork001_Node012",
+      "from": "Fork001",
+      "to": "Node012"
+    },
+    {
+      "id": "Path_Fork001_Node013",
+      "from": "Fork001",
+      "to": "Node013"
+    },
+    {
+      "id": "Path_Fork001_Node014",
+      "from": "Fork001",
+      "to": "Node014"
+    },
+    {
+      "id": "Path_Node00R_Node012",
+      "from": "Node00R",
+      "to": "Node012"
+    },
+    {
+      "id": "Path_Node00R_Node025",
+      "from": "Node00R",
+      "to": "Node025"
+    },
+    {
+      "id": "Path_Node00X_Node021",
+      "from": "Node00X",
+      "to": "Node021"
+    },
+    {
+      "id": "Path_Node001_Node002",
+      "from": "Node001",
+      "to": "Node002"
+    },
+    {
+      "id": "Path_Node002_Node003",
+      "from": "Node002",
+      "to": "Node003"
+    },
+    {
+      "id": "Path_Node003_Node004",
+      "from": "Node003",
+      "to": "Node004"
+    },
+    {
+      "id": "Path_Node003_Node005",
+      "from": "Node003",
+      "to": "Node005"
+    },
+    {
+      "id": "Path_Node003_Node007",
+      "from": "Node003",
+      "to": "Node007"
+    },
+    {
+      "id": "Path_Node005_Node006",
+      "from": "Node005",
+      "to": "Node006"
+    },
+    {
+      "id": "Path_Node007_Node009",
+      "from": "Node007",
+      "to": "Node009"
+    },
+    {
+      "id": "Path_Node007_Node00R",
+      "from": "Node007",
+      "to": "Node00R"
+    },
+    {
+      "id": "Path_Node009_Node010",
+      "from": "Node009",
+      "to": "Node010"
+    },
+    {
+      "id": "Path_Node009_Node012",
+      "from": "Node009",
+      "to": "Node012"
+    },
+    {
+      "id": "Path_Node008_Node025",
+      "from": "Node008",
+      "to": "Node025"
+    },
+    {
+      "id": "Path_Node011_Node025",
+      "from": "Node011",
+      "to": "Node025"
+    },
+    {
+      "id": "Path_Node012_Node015",
+      "from": "Node012",
+      "to": "Node015"
+    },
+    {
+      "id": "Path_Node013_Node016",
+      "from": "Node013",
+      "to": "Node016"
+    },
+    {
+      "id": "Path_Node015_Node016",
+      "from": "Node015",
+      "to": "Node016"
+    },
+    {
+      "id": "Path_Node016_Node030",
+      "from": "Node016",
+      "to": "Node030"
+    },
+    {
+      "id": "Path_Node016_Node018",
+      "from": "Node016",
+      "to": "Node018"
+    },
+    {
+      "id": "Path_Node016_Node017",
+      "from": "Node016",
+      "to": "Node017"
+    },
+    {
+      "id": "Path_Node016_Node019",
+      "from": "Node016",
+      "to": "Node019"
+    },
+    {
+      "id": "Path_Node019_Node077",
+      "from": "Node019",
+      "to": "Node077"
+    },
+    {
+      "id": "Path_Node019_Node021",
+      "from": "Node019",
+      "to": "Node021"
+    },
+    {
+      "id": "Path_Node019_Node023",
+      "from": "Node019",
+      "to": "Node023"
+    },
+    {
+      "id": "Path_Node020_Node040",
+      "from": "Node020",
+      "to": "Node040"
+    },
+    {
+      "id": "Path_Node020_Node042",
+      "from": "Node020",
+      "to": "Node042"
+    },
+    {
+      "id": "Path_Node021_Node022",
+      "from": "Node021",
+      "to": "Node022"
+    },
+    {
+      "id": "Path_Node023_Node026",
+      "from": "Node023",
+      "to": "Node026"
+    },
+    {
+      "id": "Path_Node024_Node029",
+      "from": "Node024",
+      "to": "Node029"
+    },
+    {
+      "id": "Path_Node026_Node027",
+      "from": "Node026",
+      "to": "Node027"
+    },
+    {
+      "id": "Path_Node027_Node028",
+      "from": "Node027",
+      "to": "Node028"
+    },
+    {
+      "id": "Path_Node027_Node029",
+      "from": "Node027",
+      "to": "Node029"
+    },
+    {
+      "id": "Path_Node030_Node031",
+      "from": "Node030",
+      "to": "Node031"
+    },
+    {
+      "id": "Path_Node030_Node038",
+      "from": "Node030",
+      "to": "Node038"
+    },
+    {
+      "id": "Path_Node031_Node032",
+      "from": "Node031",
+      "to": "Node032"
+    },
+    {
+      "id": "Path_Node032_Node033",
+      "from": "Node032",
+      "to": "Node033"
+    },
+    {
+      "id": "Path_Node033_Node038",
+      "from": "Node033",
+      "to": "Node038"
+    },
+    {
+      "id": "Path_Node034_Node038",
+      "from": "Node034",
+      "to": "Node038"
+    },
+    {
+      "id": "Path_Node035_Node057",
+      "from": "Node035",
+      "to": "Node057"
+    },
+    {
+      "id": "Path_Node037_Node064",
+      "from": "Node037",
+      "to": "Node064"
+    },
+    {
+      "id": "Path_Node037_Node070",
+      "from": "Node037",
+      "to": "Node070"
+    },
+    {
+      "id": "Path_Node038_Node039",
+      "from": "Node038",
+      "to": "Node039"
+    },
+    {
+      "id": "Path_Node038_Node044",
+      "from": "Node038",
+      "to": "Node044"
+    },
+    {
+      "id": "Path_Node039_Node040",
+      "from": "Node039",
+      "to": "Node040"
+    },
+    {
+      "id": "Path_Node041_Node052",
+      "from": "Node041",
+      "to": "Node052"
+    },
+    {
+      "id": "Path_Node042_Node065",
+      "from": "Node042",
+      "to": "Node065"
+    },
+    {
+      "id": "Path_Node044_Node046",
+      "from": "Node044",
+      "to": "Node046"
+    },
+    {
+      "id": "Path_Node044_Node045",
+      "from": "Node044",
+      "to": "Node045"
+    },
+    {
+      "id": "Path_Node046_Node047",
+      "from": "Node046",
+      "to": "Node047"
+    },
+    {
+      "id": "Path_Node046_Node048",
+      "from": "Node046",
+      "to": "Node048"
+    },
+    {
+      "id": "Path_Node048_Node049",
+      "from": "Node048",
+      "to": "Node049"
+    },
+    {
+      "id": "Path_Node048_Node050",
+      "from": "Node048",
+      "to": "Node050"
+    },
+    {
+      "id": "Path_Node048_Node064",
+      "from": "Node048",
+      "to": "Node064"
+    },
+    {
+      "id": "Path_Node050_Node051",
+      "from": "Node050",
+      "to": "Node051"
+    },
+    {
+      "id": "Path_Node00Y_Node048",
+      "from": "Node00Y",
+      "to": "Node048"
+    },
+    {
+      "id": "Path_Node051_Node066",
+      "from": "Node051",
+      "to": "Node066"
+    },
+    {
+      "id": "Path_Node051_Node053",
+      "from": "Node051",
+      "to": "Node053"
+    },
+    {
+      "id": "Path_Node052_Node064",
+      "from": "Node052",
+      "to": "Node064"
+    },
+    {
+      "id": "Path_Node053_Node063",
+      "from": "Node053",
+      "to": "Node063"
+    },
+    {
+      "id": "Path_Node053_Node054",
+      "from": "Node053",
+      "to": "Node054"
+    },
+    {
+      "id": "Path_Node053_Node060",
+      "from": "Node053",
+      "to": "Node060"
+    },
+    {
+      "id": "Path_Node054_Node055",
+      "from": "Node054",
+      "to": "Node055"
+    },
+    {
+      "id": "Path_Node055_Node056",
+      "from": "Node055",
+      "to": "Node056"
+    },
+    {
+      "id": "Path_Node056_Node057",
+      "from": "Node056",
+      "to": "Node057"
+    },
+    {
+      "id": "Path_Node057_Node058",
+      "from": "Node057",
+      "to": "Node058"
+    },
+    {
+      "id": "Path_Node057_Node061",
+      "from": "Node057",
+      "to": "Node061"
+    },
+    {
+      "id": "Path_Node058_Node059",
+      "from": "Node058",
+      "to": "Node059"
+    },
+    {
+      "id": "Path_Node059_Node060",
+      "from": "Node059",
+      "to": "Node060"
+    },
+    {
+      "id": "Path_Node061_Node062",
+      "from": "Node061",
+      "to": "Node062"
+    },
+    {
+      "id": "Path_Node062_Node063",
+      "from": "Node062",
+      "to": "Node063"
+    },
+    {
+      "id": "Path_Node064_Node073",
+      "from": "Node064",
+      "to": "Node073"
+    },
+    {
+      "id": "Path_Node067_Node068",
+      "from": "Node067",
+      "to": "Node068"
+    },
+    {
+      "id": "Path_Node067_Node070",
+      "from": "Node067",
+      "to": "Node070"
+    },
+    {
+      "id": "Path_Node068_Node069",
+      "from": "Node068",
+      "to": "Node069"
+    },
+    {
+      "id": "Path_Node071_Node073",
+      "from": "Node071",
+      "to": "Node073"
+    },
+    {
+      "id": "Path_Node071_Node074",
+      "from": "Node071",
+      "to": "Node074"
+    },
+    {
+      "id": "Path_Node074_Node075",
+      "from": "Node074",
+      "to": "Node075"
+    },
+    {
+      "id": "Path_Node075_Node078",
+      "from": "Node075",
+      "to": "Node078"
+    },
+    {
+      "id": "Path_Node00Y_Node00Z",
+      "from": "Node00Y",
+      "to": "Node00Z"
+    }
+  ]
+}

@@ -205,6 +205,11 @@ public sealed class CampaignBattleService
         }
         catch (Exception ex)
         {
+            // Preserve the authored scene and persist a side-by-side HEX template
+            // snapshot before returning the normal, retryable JoinSession refusal.
+            CampaignEncounterDiagnostics.Capture(
+                _options.StorePath, pending.CampaignId, pending.EncounterGuid, run.Race,
+                run.LastDeckId, pending.SessionState.EncounterData, ex, _logger);
             _active.TryRemove(new KeyValuePair<ulong, ActiveBattle>(context.ProfileId, active));
             _joined.TryRemove(context.ProfileId, out _);
             return Fail("the campaign battle engine could not start: " + ex.Message, out reason);
@@ -231,9 +236,12 @@ public sealed class CampaignBattleService
         HexRulesEngine engine,
         List<UID> winners)
     {
-        _active.TryRemove(new KeyValuePair<ulong, ActiveBattle>(profileId, battle));
+        if (!_active.TryRemove(new KeyValuePair<ulong, ActiveBattle>(profileId, battle)))
+            return;
+
         _joined.TryRemove(profileId, out _);
         var won = winners.Contains(battle.Joined.Human);
+        var capturedTemplates = engine.ReadCampaignTamingAtGameEnd(battle.Joined.Human);
         _logger?.LogInformation(
             "Campaign battle: {user} battle {game} ended; won={won}",
             userName, battle.Joined.Pending.GameId, won);
@@ -242,7 +250,8 @@ public sealed class CampaignBattleService
             battle.Joined.Session,
             battle.Joined.Pending.CampaignId,
             battle.Joined.Pending.EncounterGuid,
-            won);
+            won,
+            capturedTemplates);
     }
 
     private static bool Fail(string why, out string reason)

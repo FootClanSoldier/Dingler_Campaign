@@ -76,6 +76,32 @@ public sealed class CampaignQuestTemplateDiagnostics : IStartupService
         var outputPath = Path.Combine(diagnosticsPath, "quest-templates-crayburn.json");
         File.WriteAllText(outputPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
+        // The original AZ1 welcome dialogue starts multiple journal quests.
+        // Capture their full authored objective identities before wiring any
+        // encounter or reward effects to them.
+        string[] az1Scripts =
+        [
+            "az01_tamed",
+            "az01_ar_find_ambling_mesa",
+            "az01_uw_find_cave_in",
+        ];
+        var az1 = new JsonArray();
+        foreach (var entry in discovered.Templates)
+        {
+            var script = ScalarText(ReadMember(entry.Template, "m_ScriptName"));
+            if (az1Scripts.Contains(script, StringComparer.OrdinalIgnoreCase))
+                az1.Add(BuildDetailed(entry.SourceMember, entry.Template));
+        }
+        var az1Path = Path.Combine(diagnosticsPath, "az1-opening-quest-templates.json");
+        File.WriteAllText(az1Path, new JsonObject
+        {
+            ["generatedUtc"] = DateTime.UtcNow.ToString("O"),
+            ["requestedScripts"] = new JsonArray(az1Scripts.Select(script => (JsonNode?)JsonValue.Create(script)).ToArray()),
+            ["foundCount"] = az1.Count,
+            ["matches"] = az1,
+        }.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        _logger?.LogInformation("Campaign AZ1 opening quest diagnostic found {found}/3 authored templates; dump={path}", az1.Count, Path.GetFullPath(az1Path));
+
         _logger?.LogInformation(
             "Campaign QuestTemplate diagnostic scanned {Count} templates and found {Matches} Crayburn candidate(s); dump={Path}",
             discovered.Templates.Count,

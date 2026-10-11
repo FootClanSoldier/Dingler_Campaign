@@ -20,9 +20,14 @@ public sealed record CampaignQuestTurnInResult(
     CampaignRunRecord Panorama,
     CampaignRunRecord Quest);
 
+public sealed record CampaignAreaTravelResult(
+    CampaignRunRecord Panorama,
+    CampaignRunRecord Area,
+    bool Created);
+
 /// <summary>
 /// Campaign persistence uses one versioned JSON aggregate per profile/champion.
-/// A champion owns deck/talent selection once while PANORAMA, QUEST and DUNGEON
+/// A champion owns deck/talent selection once while PANORAMA, QUEST, DUNGEON and AREA
 /// remain independent campaign instances with stable CampID values.
 /// </summary>
 public sealed class CampaignRunStore
@@ -75,7 +80,7 @@ public sealed class CampaignRunStore
     {
         lock (_gate)
         {
-            if (campaignType is not (0 or 1 or 4 or 6))
+            if (campaignType is not (0 or 1 or 2 or 4 or 6))
                 return Array.Empty<CampaignRunRecord>();
 
             var champion = GetOrCreateChampionLocked(profileId, championId, race);
@@ -86,6 +91,7 @@ public sealed class CampaignRunStore
                 var typeName = campaignType switch
                 {
                     1 => "DUNGEON",
+                    2 => "AREA",
                     4 => "QUEST",
                     6 => "PANORAMA",
                     _ => string.Empty,
@@ -135,6 +141,13 @@ public sealed class CampaignRunStore
                     if (candidate is not null)
                     {
                         AttachOwnerLocked(loaded, candidate);
+                        if (RepairCompletedCrayburnTravelLocked(loaded))
+                        {
+                            SaveLocked(loaded);
+                            StaticLogger.LogInformation(
+                                "Campaign: restored post-Crayburn travel conversation for champion {champion}",
+                                loaded.ChampionId);
+                        }
                         record = candidate;
                         return true;
                     }
@@ -166,6 +179,77 @@ public sealed class CampaignRunStore
 
             NormalizeRecordIdentityLocked(champion, record);
             SaveLocked(champion);
+        }
+    }
+
+    /// <summary>
+    /// Consume an active Shroom Haus offer once and persist the selected card
+    /// with its AREA state. The profile stream later projects this receipt as
+    /// a collection instance; a repeated client event cannot claim it twice.
+    /// </summary>
+    public bool TryClaimAz1ShroomReward(CampaignRunRecord area, string choice)
+    {
+        lock (_gate)
+        {
+            var champion = LoadCachedLocked(area.ProfileId, area.ChampionId);
+            var saved = champion?.Campaigns.FirstOrDefault(candidate =>
+                candidate.CampaignId == area.CampaignId && candidate.CampaignType == "AREA"
+                && candidate.TemplateName == CampaignAz1Config.TemplateName);
+            if (saved is null || !CampaignShroomRewardCatalog.IsChoice(choice)
+                || !string.Equals(saved.State["ALoc"]?.ToString(), CampaignAz1Config.FourthTitle, StringComparison.Ordinal))
+                return false;
+            var location = (saved.State["VisLocs"] as JsonArray)?.OfType<JsonObject>()
+                .Select(static loc => loc["Data"] as JsonObject)
+                .FirstOrDefault(loc => loc?["node"]?.ToString() == CampaignAz1Config.FourthNode);
+            if (location is null || location["enabled"]?.GetValue<bool>() != true
+                || location["shroom_intro_completed"]?.GetValue<bool>() != true
+                || location["completed"]?.GetValue<bool>() == true
+                || location["type"]?.ToString() != "ShroomHaus"
+                || (location["choices"] as JsonArray)?.Any(item =>
+                    string.Equals(item?.ToString(), choice, StringComparison.OrdinalIgnoreCase)) != true)
+                return false;
+
+            location["shroom_reward_choice"] = choice.ToLowerInvariant();
+            location["completed"] = true;
+            location["type"] = "None";
+            location["autostart"] = false;
+            location["shroomhaus_ready"] = false;
+            location["choices"] = null;
+            saved.State["ALoc"] = null;
+            saved.State["CurState"] = "EXPLORE";
+            SaveLocked(champion!);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Read already claimed AREA rewards for a profile without creating new
+    /// champions or mutating campaign progress during the profile stream.
+    /// </summary>
+    public IReadOnlyList<(int Race, string Choice)> GetProfileShroomRewards(ulong profileId)
+    {
+        lock (_gate)
+        {
+            var result = new List<(int Race, string Choice)>();
+            if (!Directory.Exists(_folder))
+                return result;
+            foreach (var path in Directory.EnumerateFiles(_folder, $"campaign-{profileId}-*.json"))
+            {
+                var owner = LoadPathLocked(path);
+                if (owner is null || owner.ProfileId != profileId || owner.Race is < 1 or > 8)
+                    continue;
+                foreach (var area in owner.Campaigns.Where(record =>
+                             record.CampaignType == "AREA" && record.TemplateName == CampaignAz1Config.TemplateName))
+                {
+                    var location = (area.State["VisLocs"] as JsonArray)?.OfType<JsonObject>()
+                        .Select(static loc => loc["Data"] as JsonObject)
+                        .FirstOrDefault(loc => loc?["node"]?.ToString() == CampaignAz1Config.FourthNode);
+                    var choice = location?["shroom_reward_choice"]?.ToString();
+                    if (location?["completed"]?.GetValue<bool>() == true && CampaignShroomRewardCatalog.IsChoice(choice))
+                        result.Add((owner.Race, choice!));
+                }
+            }
+            return result;
         }
     }
 
@@ -360,6 +444,127 @@ public sealed class CampaignRunStore
         }
     }
 
+    /// <summary>
+    /// An explicit race travel choice creates or resumes one AREA without
+    /// replacing the completed Crayburn quest or the retained starter panorama.
+    /// Rejects stale/repeated events and unopened travel conversations.
+    /// </summary>
+    public CampaignAreaTravelResult? TryBeginAz1Travel(
+        CampaignRunRecord panorama,
+        Func<ulong, CampaignRunRecord> areaFactory)
+    {
+        lock (_gate)
+        {
+            var champion = LoadCachedLocked(panorama.ProfileId, panorama.ChampionId);
+            if (champion is null || champion.CurrentCampaignId != panorama.CampaignId)
+                return null;
+
+            var source = champion.Campaigns.FirstOrDefault(record =>
+                record.CampaignId == panorama.CampaignId
+                && string.Equals(record.CampaignType, "PANORAMA", StringComparison.OrdinalIgnoreCase));
+            var quest = champion.Campaigns.FirstOrDefault(record =>
+                string.Equals(record.CampaignType, "QUEST", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(record.TemplateName, CampaignCrayburnConfig.QuestScriptName,
+                    StringComparison.OrdinalIgnoreCase));
+            var cfg = CampaignStateFactory.Race(champion.Race);
+            if (source is null || source.State["Finished"] is not null
+                || source.State["PostCrayburnReport"]?.GetValue<bool>() != true
+                || !string.Equals(source.State["ALoc"]?.ToString(), cfg.IntroNpc, StringComparison.Ordinal)
+                || quest is null || !IsFinished(quest)
+                || !string.Equals(quest.State["FinishReason"]?.ToString(), "Complete", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var step2Done = (quest.State["VisLocs"] as JsonArray)?.OfType<JsonObject>()
+                .Select(static item => item["Data"] as JsonObject)
+                .Any(data => data is not null
+                    && string.Equals(data["node"]?.ToString(), CampaignCrayburnConfig.QuestReportLocation, StringComparison.Ordinal)
+                    && data["completed"]?.GetValue<bool>() == true) == true;
+            var npcReady = (source.State["VisLocs"] as JsonArray)?.OfType<JsonObject>()
+                .Select(static item => item["Data"] as JsonObject)
+                .Any(data => data is not null
+                    && string.Equals(data["node"]?.ToString(), cfg.IntroNpc, StringComparison.Ordinal)
+                    && string.Equals(data["conversationId"]?.ToString(), cfg.TransitionConversation, StringComparison.OrdinalIgnoreCase)
+                    && data["visible"]?.GetValue<bool>() == true
+                    && data["enabled"]?.GetValue<bool>() == true) == true;
+            if (!step2Done || !npcReady)
+                return null;
+
+            var area = champion.Campaigns.FirstOrDefault(record =>
+                string.Equals(record.CampaignType, "AREA", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(record.TemplateName, CampaignAz1Config.TemplateName,
+                    StringComparison.OrdinalIgnoreCase));
+            var created = area is null;
+            if (area is null)
+            {
+                area = areaFactory(NewCampaignIdLocked());
+                area.CampaignType = "AREA";
+                area.TemplateName = CampaignAz1Config.TemplateName;
+                NormalizeRecordIdentityLocked(champion, area);
+                champion.Campaigns.Add(area);
+            }
+
+            source.State["ALoc"] = null;
+            source.State["CurState"] = "EXPLORE";
+            champion.CurrentCampaignId = area.CampaignId;
+            SaveLocked(champion);
+            return new CampaignAreaTravelResult(source, area, created);
+        }
+    }
+
+    /// <summary>
+    /// Complete an authored AZ1 welcome and create any missing journal campaigns
+    /// in one champion aggregate. Replay is safe for an older save whose welcome
+    /// was completed before its QUEST children were implemented.
+    /// </summary>
+    public IReadOnlyList<CampaignRunRecord> EnsureAz1OpeningQuests(
+        CampaignRunRecord area,
+        IReadOnlyList<CampaignAz1AuthoredCatalog.Quest> authored,
+        Action<CampaignRunRecord>? updateArea = null)
+    {
+        lock (_gate)
+        {
+            var champion = LoadCachedLocked(area.ProfileId, area.ChampionId);
+            if (champion is null || champion.CurrentCampaignId != area.CampaignId)
+                return Array.Empty<CampaignRunRecord>();
+            var persisted = champion.Campaigns.FirstOrDefault(item => item.CampaignId == area.CampaignId
+                && string.Equals(item.CampaignType, "AREA", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.TemplateName, CampaignAz1Config.TemplateName, StringComparison.OrdinalIgnoreCase));
+            if (persisted is null)
+                return Array.Empty<CampaignRunRecord>();
+            var location = (persisted.State["VisLocs"] as JsonArray)?.OfType<JsonObject>()
+                .Select(static item => item["Data"] as JsonObject)
+                .FirstOrDefault(item => item?["node"]?.ToString() == CampaignAz1Config.NextNode);
+            if (location is null)
+                return Array.Empty<CampaignRunRecord>();
+            if (updateArea is null && location["completed"]?.GetValue<bool>() != true)
+                return Array.Empty<CampaignRunRecord>();
+            if (updateArea is not null && (location["completed"]?.GetValue<bool>() == true
+                || !string.Equals(persisted.State["ALoc"]?.ToString(), CampaignAz1Config.NextTitle, StringComparison.Ordinal)))
+                return Array.Empty<CampaignRunRecord>();
+            updateArea?.Invoke(persisted);
+            var created = new List<CampaignRunRecord>();
+            foreach (var quest in authored)
+            {
+                if (champion.Campaigns.Any(item => string.Equals(item.CampaignType, "QUEST", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(item.TemplateName, quest.Script, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                var child = new CampaignRunRecord
+                {
+                    CampaignId = NewCampaignIdLocked(),
+                    CampaignType = "QUEST",
+                    TemplateName = quest.Script,
+                    Started = true,
+                };
+                NormalizeRecordIdentityLocked(champion, child);
+                child.State = CampaignStateFactory.CreateAz1QuestState(child, quest);
+                champion.Campaigns.Add(child);
+                created.Add(child);
+            }
+            SaveLocked(champion);
+            return created;
+        }
+    }
+
     public void Delete(CampaignRunRecord record)
     {
         lock (_gate)
@@ -411,11 +616,18 @@ public sealed class CampaignRunStore
         if (champion is null)
             return null;
 
-        if (EnsureAggregateIdentityLocked(champion, profileId, championId))
+        var repairedIdentity = EnsureAggregateIdentityLocked(champion, profileId, championId);
+        var repairedTravel = RepairCompletedCrayburnTravelLocked(champion);
+        if (repairedIdentity || repairedTravel)
         {
-            StaticLogger.LogWarning(
-                "Campaign: repaired persisted campaign aggregate identity for profile {profile}, champion {champion}",
-                profileId, championId);
+            if (repairedIdentity)
+                StaticLogger.LogWarning(
+                    "Campaign: repaired persisted campaign aggregate identity for profile {profile}, champion {champion}",
+                    profileId, championId);
+            if (repairedTravel)
+                StaticLogger.LogInformation(
+                    "Campaign: restored post-Crayburn travel conversation for champion {champion}",
+                    championId);
             SaveLocked(champion);
         }
         else
@@ -579,6 +791,47 @@ public sealed class CampaignRunStore
             }
             return null;
         }
+    }
+
+    private static bool RepairCompletedCrayburnTravelLocked(CampaignChampionRun champion)
+    {
+        // Repair only an actually completed Crayburn report, never an untouched
+        // tutorial, an unfinished quest, or a champion that has entered AREA.
+        if (champion.Campaigns.Any(record =>
+                string.Equals(record.CampaignType, "AREA", StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        var quest = champion.Campaigns.FirstOrDefault(record =>
+            string.Equals(record.CampaignType, "QUEST", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(record.TemplateName, CampaignCrayburnConfig.QuestScriptName,
+                StringComparison.OrdinalIgnoreCase));
+        if (quest is null || quest.State["Finished"] is null
+            || !string.Equals(quest.State["FinishReason"]?.ToString(), "Complete", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var step2Completed = (quest.State["VisLocs"] as JsonArray)?.OfType<JsonObject>()
+            .Select(static location => location["Data"] as JsonObject)
+            .Any(data => data is not null
+                && (string.Equals(data["node"]?.ToString(), CampaignCrayburnConfig.QuestReportLocation, StringComparison.Ordinal)
+                    || string.Equals(data["name"]?.ToString(), CampaignCrayburnConfig.QuestReportLocation, StringComparison.Ordinal))
+                && data["completed"]?.GetValue<bool>() == true) == true;
+        if (!step2Completed)
+            return false;
+
+        var cfg = CampaignStateFactory.Race(champion.Race);
+        var panorama = champion.Campaigns.FirstOrDefault(record =>
+            string.Equals(record.CampaignType, "PANORAMA", StringComparison.OrdinalIgnoreCase)
+            && record.CampaignId == champion.CurrentCampaignId);
+        if (panorama is null || panorama.State["Finished"] is not null)
+            return false;
+
+        var giverCompleted = (panorama.State["VisLocs"] as JsonArray)?.OfType<JsonObject>()
+            .Select(static location => location["Data"] as JsonObject)
+            .Any(data => data is not null
+                && (string.Equals(data["node"]?.ToString(), cfg.QuestNpc, StringComparison.Ordinal)
+                    || string.Equals(data["name"]?.ToString(), cfg.QuestNpc, StringComparison.Ordinal))
+                && data["completed"]?.GetValue<bool>() == true) == true;
+        return giverCompleted && CampaignStateFactory.PreparePostCrayburnTravel(panorama.State, cfg);
     }
 
     private bool EnsureAggregateIdentityLocked(CampaignChampionRun champion, ulong profileId, ulong championId)

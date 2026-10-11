@@ -262,7 +262,424 @@ public static class CampaignStateFactory
         });
     }
 
-    public static JsonObject BuildInputResponse(CampaignRunRecord record, bool success = true, JsonNode? stateOverride = null)
+    /// <summary>
+    /// Entry state for the authored AZ1 overworld. Only the verified opening
+    /// is actionable; other directly mapped nodes stay hidden and disabled.
+    /// </summary>
+    public static JsonObject CreateAz1AreaState(CampaignRunRecord record, string startedUtc)
+    {
+        var entry = CampaignLocation(CampaignAz1Config.StartingTitle, "Empty", enabled: true, visible: true);
+        var next = CampaignLocation(CampaignAz1Config.NextTitle, "Empty", enabled: true, visible: true);
+        var third = CampaignLocation(CampaignAz1Config.ThirdTitle, "Empty");
+        var firstData = entry["Data"]!.AsObject();
+        firstData["node"] = CampaignAz1Config.StartingNode;
+        firstData["title"] = CampaignAz1Config.StartingTitle;
+        firstData["description"] = string.Empty;
+        firstData["completed"] = true;
+        var secondData = next["Data"]!.AsObject();
+        secondData["node"] = CampaignAz1Config.NextNode;
+        secondData["title"] = CampaignAz1Config.NextTitle;
+        secondData["description"] = string.Empty;
+        var thirdData = third["Data"]!.AsObject();
+        thirdData["node"] = CampaignAz1Config.ThirdNode;
+        thirdData["title"] = CampaignAz1Config.ThirdTitle;
+        thirdData["description"] = string.Empty;
+
+        var state = ToObject(new
+        {
+            CampID = record.CampaignId,
+            ChampID = record.ChampionId,
+            TempType = "AREA",
+            PayGroups = Array.Empty<object>(),
+            CSlide = (object?)null,
+            ALoc = (string?)null,
+            VisLocs = new[] { entry, next, third },
+            LocNodes = new[] { Node(CampaignAz1Config.StartingNode), Node(CampaignAz1Config.NextNode), Node(CampaignAz1Config.ThirdNode) },
+            Encounters = Array.Empty<object>(),
+            Champions = Array.Empty<object>(),
+            CurState = "EXPLORE",
+            LastNode = CampaignAz1Config.StartingNode,
+            PublicState = new
+            {
+                Data = new
+                {
+                    CampaignGroup = "AREA",
+                    visited_nodes = new[] { CampaignAz1Config.StartingNode },
+                    visited_paths = Array.Empty<string>(),
+                    locked_paths = Array.Empty<string>(),
+                    quest_nodes = Array.Empty<string>(),
+                },
+            },
+            Started = startedUtc,
+            Finished = (string?)null,
+            FinishReason = (string?)null,
+            Wins = 0,
+            Losses = 0,
+            Score = 0,
+            HealthAdj = 0,
+            DungeonLifeAdj = 0,
+            Flags = new Dictionary<string, object>(),
+        });
+        EnsureAz1MapState(state);
+        SyncAz1OpeningExitLocks(state);
+        return state;
+    }
+
+    /// <summary>
+    /// Add only directly mapped, original-client AZ1 locations to a new or
+    /// persisted AREA. All additional locations remain hidden and disabled;
+    /// their encounter/action types are deliberately not inferred from titles.
+    /// </summary>
+    public static bool EnsureAz1MapState(JsonObject state)
+    {
+        if (state["VisLocs"] is not JsonArray locations || state["LocNodes"] is not JsonArray nodes)
+            return false;
+
+        var changed = false;
+        foreach (var authored in CampaignAz1MapCatalog.DirectLocations)
+        {
+            if (!locations.OfType<JsonObject>().Any(loc =>
+                string.Equals(loc["Data"]?["node"]?.ToString(), authored.Id, StringComparison.Ordinal)))
+            {
+                var loc = CampaignLocation(authored.Title, "None");
+                loc["Data"]!["node"] = authored.Id;
+                loc["Data"]!["title"] = authored.Title;
+                locations.Add(loc);
+                changed = true;
+            }
+
+            if (!nodes.OfType<JsonObject>().Any(node =>
+                string.Equals(node["Name"]?.ToString(), authored.Id, StringComparison.Ordinal)))
+            {
+                nodes.Add(ToObject(new
+                {
+                    Name = authored.Id,
+                    Data = new { id = authored.PhysicalId, type = "DEFAULT" },
+                }));
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// Reconcile the first authored AZ1 conversation for existing AREA saves.
+    /// This preserves all visited paths and completed nodes, and never creates
+    /// quest objectives or reveals an unearned map destination.
+    /// </summary>
+    public static bool PrepareAz1Welcome(JsonObject state, string conversationId)
+    {
+        if (state["VisLocs"] is not JsonArray locations)
+            return false;
+        var changed = false;
+        var nodeTwo = locations.OfType<JsonObject>()
+            .Select(static location => location["Data"] as JsonObject)
+            .FirstOrDefault(data => data?["node"]?.ToString() == CampaignAz1Config.NextNode);
+        if (nodeTwo is null)
+            return false;
+
+        if (nodeTwo["completed"]?.GetValue<bool>() != true)
+        {
+            changed |= SetValue(nodeTwo, "type", JsonValue.Create("Convo"));
+            changed |= SetValue(nodeTwo, "conversationId", JsonValue.Create(conversationId));
+            changed |= SetValue(nodeTwo, "givequest", JsonValue.Create(true));
+            changed |= SetValue(nodeTwo, "autostart", JsonValue.Create(true));
+            // Earlier AREA saves could retain the internal node ID as ALoc.
+            // Repair only this active welcome location; preserve LastNode and visits.
+            if (string.Equals(state["ALoc"]?.ToString(), CampaignAz1Config.NextNode, StringComparison.Ordinal))
+            {
+                var activeName = nodeTwo["name"]?.ToString();
+                state["ALoc"] = string.IsNullOrWhiteSpace(activeName)
+                    ? CampaignAz1Config.NextTitle : activeName;
+                changed = true;
+            }
+        }
+
+        var nodeThree = locations.OfType<JsonObject>()
+            .Select(static location => location["Data"] as JsonObject)
+            .FirstOrDefault(data => data?["node"]?.ToString() == CampaignAz1Config.ThirdNode);
+        if (nodeThree is null)
+        {
+            var third = CampaignLocation(CampaignAz1Config.ThirdTitle, "Empty");
+            third["Data"]!["node"] = CampaignAz1Config.ThirdNode;
+            third["Data"]!["title"] = CampaignAz1Config.ThirdTitle;
+            locations.Add(third);
+            changed = true;
+        }
+        if (state["LocNodes"] is JsonArray nodes &&
+            !nodes.OfType<JsonObject>().Any(node => node["Name"]?.ToString() == CampaignAz1Config.ThirdNode))
+        {
+            nodes.Add(ToObject(Node(CampaignAz1Config.ThirdNode)));
+            changed = true;
+        }
+        // Populate the directly authored exits without revealing them. These
+        // become reachable only after the Wild Cub encounter is resolved.
+        foreach (var (node, title) in new[]
+        {
+            (CampaignAz1Config.FourthNode, CampaignAz1Config.FourthTitle),
+            (CampaignAz1Config.OaksNode, CampaignAz1Config.OaksTitle),
+        })
+        {
+            if (!locations.OfType<JsonObject>().Any(item => item["Data"]?["node"]?.ToString() == node))
+            {
+                var location = CampaignLocation(title, "Empty");
+                location["Data"]!["node"] = node;
+                location["Data"]!["title"] = title;
+                location["Data"]!["description"] = string.Empty;
+                locations.Add(location);
+                changed = true;
+            }
+            if (state["LocNodes"] is JsonArray locNodes &&
+                !locNodes.OfType<JsonObject>().Any(item => item["Name"]?.ToString() == node))
+            {
+                locNodes.Add(ToObject(Node(node)));
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// Promote Dunnwood from the earlier empty map placeholder into the
+    /// original Wild Cub encounter, retaining the authored first-visit prelude.
+    /// </summary>
+    public static bool PrepareAz1Dunnwood(JsonObject state, string encounterId, string preludeId)
+    {
+        if (state["VisLocs"] is not JsonArray locations)
+            return false;
+        var third = locations.OfType<JsonObject>()
+            .Select(static loc => loc["Data"] as JsonObject)
+            .FirstOrDefault(data => data?["node"]?.ToString() == CampaignAz1Config.ThirdNode);
+        if (third is null)
+            return false;
+        var changed = false;
+        var preludeFinished = third["pre_encounter_completed"]?.GetValue<bool>() == true;
+        var completed = third["completed"]?.GetValue<bool>() == true;
+        if (!completed)
+        {
+            changed |= SetValue(third, "type", JsonValue.Create(preludeFinished ? "Encounter" : "Convo"));
+            changed |= SetValue(third, "conversationId", preludeFinished ? null : JsonValue.Create(preludeId));
+            changed |= SetValue(third, "encounter", preludeFinished ? JsonValue.Create(encounterId) : null);
+            changed |= SetValue(third, "autostart", JsonValue.Create(!preludeFinished));
+            changed |= SetValue(third, "pre_encounter", JsonValue.Create(true));
+            // Rehydrating the authored scene must not erase a capture-gated retry
+            // established by the completed battle result.
+            changed |= SetValue(third, "repeatable", JsonValue.Create(
+                preludeFinished && third["repeatable"]?.GetValue<bool>() == true));
+        }
+        if (state["Encounters"] is JsonArray encounters &&
+            !encounters.OfType<JsonObject>().Any(e => e["Name"]?.ToString() == encounterId))
+        {
+            encounters.Add(ToObject(new { Name = encounterId, Data = new { encscene = encounterId } }));
+            changed = true;
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// Rehydrate the original Sporemist intro and card chooser. The offer is
+    /// client-readable only after the conversation, and a claimed reward never
+    /// reopens. Reference card choices are separately validated at startup.
+    /// </summary>
+    public static bool PrepareAz1Sporemist(JsonObject state, string conversationId)
+    {
+        if (state["VisLocs"] is not JsonArray locations)
+            return false;
+        var location = locations.OfType<JsonObject>()
+            .Select(static item => item["Data"] as JsonObject)
+            .FirstOrDefault(data => data?["node"]?.ToString() == CampaignAz1Config.FourthNode);
+        if (location is null)
+            return false;
+
+        var changed = false;
+        var introductionDone = location["shroom_intro_completed"]?.GetValue<bool>() == true;
+        var completed = location["completed"]?.GetValue<bool>() == true;
+        var validOffers = CampaignShroomRewardCatalog.TryGetVerifiedClientTemplates(out var offers);
+        var chooserReady = introductionDone && !completed && validOffers;
+        changed |= SetValue(location, "type", JsonValue.Create(completed ? "None" : chooserReady ? "ShroomHaus" : "Convo"));
+        changed |= SetValue(location, "conversationId", introductionDone ? null : JsonValue.Create(conversationId));
+        changed |= SetValue(location, "encounter", null);
+        changed |= SetValue(location, "autostart", JsonValue.Create(!completed && (!introductionDone || chooserReady)));
+        changed |= SetValue(location, "shroomhaus_ready", JsonValue.Create(chooserReady));
+        changed |= SetValue(location, "choices", chooserReady
+            ? new JsonArray(offers.Select(static id => (JsonNode?)JsonValue.Create(id)).ToArray()) : null);
+        changed |= SetValue(location, "selection-type", JsonValue.Create("Shroomkin_Haus"));
+        changed |= SetValue(location, "selection-desc", JsonValue.Create("Shroomkin_Instructions"));
+        // Neither an unvisited nor a dialogue-only node may bypass Dunnwood.
+        var opened = HasWonAz1Bear(state);
+        changed |= SetValue(location, "enabled", JsonValue.Create(opened));
+        return changed;
+    }
+
+    /// <summary>
+    /// A battle win opens map exits independently from the capture objective.
+    /// A persisted retryable encounter with an AREA win is evidence of an
+    /// earlier victory when the dedicated win receipt is absent.
+    /// </summary>
+    public static bool HasWonAz1Bear(JsonObject state)
+    {
+        var bear = FindAz1Location(state, CampaignAz1Config.ThirdNode);
+        return bear?["bear_defeated"]?.GetValue<bool>() == true
+            || bear?["completed"]?.GetValue<bool>() == true
+            || (bear?["repeatable"]?.GetValue<bool>() == true
+                && (state["Wins"]?.GetValue<int>() ?? 0) > 0);
+    }
+
+    public static bool PrepareAz1GaalCamp(JsonObject state, string first, string repeat, string hasFortune)
+    {
+        var location = FindAz1Location(state, CampaignAz1Config.OaksNode);
+        if (location is null)
+            return false;
+        var changed = false;
+        var visits = location["gaal_visits"]?.GetValue<int>() ?? 0;
+        // A real active Fortune is not minted by the conversation itself.
+        // Keep its original dialogue branch reserved for future validated grants.
+        var fortune = state["PublicState"]?["Data"]?["gaal_fortune_guid"]?.ToString();
+        var conversation = !string.IsNullOrEmpty(fortune) ? hasFortune : visits > 0 ? repeat : first;
+        changed |= SetValue(location, "type", JsonValue.Create("Convo"));
+        changed |= SetValue(location, "encounter", null);
+        changed |= SetValue(location, "conversationId", JsonValue.Create(conversation));
+        changed |= SetValue(location, "completed", JsonValue.Create(false));
+        changed |= SetValue(location, "repeatable", JsonValue.Create(visits > 0));
+        changed |= SetValue(location, "autostart", JsonValue.Create(visits == 0));
+        changed |= SetValue(location, "enabled", JsonValue.Create(HasWonAz1Bear(state)));
+        return changed;
+    }
+
+    /// <summary>
+    /// The first completed Milosh conversation opens the authored path to
+    /// the Cockatwice Chick encounter. Its opening dialogue is independent
+    /// from optional Fortune payment. A won battle remains retryable until the
+    /// matching Tamed capture objective is completed.
+    /// </summary>
+    public static bool PrepareAz1Sutherland(JsonObject state, string sceneId, string preludeId)
+    {
+        var location = FindAz1Location(state, CampaignAz1Config.SutherlandNode);
+        var gaal = FindAz1Location(state, CampaignAz1Config.OaksNode);
+        if (location is null || gaal is null)
+            return false;
+        var changed = false;
+        var visitedGaal = (gaal["gaal_visits"]?.GetValue<int>() ?? 0) > 0;
+        var available = visitedGaal && gaal["enabled"]?.GetValue<bool>() == true;
+        var completed = location["completed"]?.GetValue<bool>() == true;
+        var preludeDone = location["pre_encounter_completed"]?.GetValue<bool>() == true;
+        changed |= SetValue(location, "visible", JsonValue.Create(available));
+        changed |= SetValue(location, "enabled", JsonValue.Create(available));
+        changed |= SetValue(location, "type", JsonValue.Create(completed ? "None" : preludeDone ? "Encounter" : "Convo"));
+        changed |= SetValue(location, "conversationId", !completed && !preludeDone ? JsonValue.Create(preludeId) : null);
+        changed |= SetValue(location, "encounter", !completed && preludeDone ? JsonValue.Create(sceneId) : null);
+        changed |= SetValue(location, "autostart", JsonValue.Create(available && !completed && !preludeDone));
+        changed |= SetValue(location, "repeatable", JsonValue.Create(!completed && preludeDone));
+        if (state["Encounters"] is JsonArray encounters
+            && !encounters.OfType<JsonObject>().Any(e => string.Equals(e["Name"]?.ToString(), sceneId, StringComparison.OrdinalIgnoreCase)))
+        {
+            encounters.Add(ToObject(new { Name = sceneId, Data = new { encscene = sceneId } }));
+            changed = true;
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// Project all original prefab path locks while unlocking only explicitly
+    /// implemented opening exits. A visible node may still have a locked path.
+    /// Saved visited-path history and unknown lock identifiers are retained.
+    /// </summary>
+    public static bool SyncAz1OpeningExitLocks(JsonObject state)
+    {
+        if (state["PublicState"]?["Data"] is not JsonObject publicData)
+            return false;
+        var changed = false;
+        if (publicData["locked_paths"] is not JsonArray locked)
+        {
+            locked = new JsonArray();
+            publicData["locked_paths"] = locked;
+            changed = true;
+        }
+
+        // A physical path is not automatically a playable connection. Only
+        // explicitly implemented opening exits can unlock; all other original
+        // prefab paths stay locked until their own authored gates are known.
+        foreach (var path in CampaignAz1MapCatalog.Paths)
+        {
+            var permitted = CampaignAz1Config.IsOpeningPath(path.Id)
+                && FindAz1Location(state, path.From)?["enabled"]?.GetValue<bool>() == true
+                && FindAz1Location(state, path.To)?["enabled"]?.GetValue<bool>() == true;
+            if (path.Id == CampaignAz1Config.SecondPath)
+                permitted &= FindAz1Location(state, CampaignAz1Config.NextNode)?["completed"]?.GetValue<bool>() == true;
+            if (path.Id is CampaignAz1Config.DunnwoodToHollow or CampaignAz1Config.DunnwoodToOaks)
+                permitted &= HasWonAz1Bear(state);
+            if (path.Id == CampaignAz1Config.OaksToSutherland)
+                permitted &= (FindAz1Location(state, CampaignAz1Config.OaksNode)?["gaal_visits"]?.GetValue<int>() ?? 0) > 0;
+
+            var index = -1;
+            for (var i = 0; i < locked.Count; i++)
+                if (string.Equals(locked[i]?.ToString(), path.Id, StringComparison.Ordinal))
+                {
+                    index = i;
+                    break;
+                }
+
+            if (!permitted && index < 0)
+            {
+                locked.Add(path.Id);
+                changed = true;
+            }
+            else if (permitted && index >= 0)
+            {
+                locked.RemoveAt(index);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private static JsonObject? FindAz1Location(JsonObject state, string node) =>
+        (state["VisLocs"] as JsonArray)?.OfType<JsonObject>()
+            .Select(static item => item["Data"] as JsonObject)
+            .FirstOrDefault(data => string.Equals(data?["node"]?.ToString(), node, StringComparison.Ordinal));
+
+    public static JsonObject CreateAz1QuestState(CampaignRunRecord record, CampaignAz1AuthoredCatalog.Quest quest)
+    {
+        var objectiveLocations = new JsonArray();
+        var objectiveNodes = new JsonArray();
+        foreach (var objective in quest.Objectives)
+        {
+            var loc = CampaignLocation(objective.Node,
+                objective.Encounter is not null ? "Encounter" : "Convo",
+                objective.Encounter, objective.Conversation, enabled: true, visible: true);
+            loc["Data"]!["title"] = objective.Title;
+            objectiveLocations.Add(loc);
+            objectiveNodes.Add(ToObject(Node(objective.Node)));
+        }
+        return new JsonObject
+        {
+            ["CampID"] = record.CampaignId,
+            ["ChampID"] = record.ChampionId,
+            ["TempType"] = "QUEST",
+            ["PayGroups"] = new JsonArray(),
+            ["CSlide"] = null,
+            ["ALoc"] = null,
+            ["VisLocs"] = objectiveLocations,
+            ["LocNodes"] = objectiveNodes,
+            ["Encounters"] = new JsonArray(),
+            ["Champions"] = new JsonArray(),
+            ["CurState"] = "EXPLORE",
+            ["LastNode"] = quest.Objectives[0].Node,
+            ["PublicState"] = ToObject(new { Data = new { CampaignGroup = "AREA" } }),
+            ["QuestTemplateId"] = quest.TemplateId,
+            ["Started"] = (string?)null,
+            ["Finished"] = null,
+            ["FinishReason"] = null,
+            ["Wins"] = 0,
+            ["Losses"] = 0,
+            ["Score"] = 0,
+            ["HealthAdj"] = 0,
+            ["DungeonLifeAdj"] = 0,
+            ["Flags"] = new JsonObject(),
+        };
+    }
+
+    public static JsonObject BuildInputResponse(CampaignRunRecord record, bool success = true, JsonNode? stateOverride = null, JsonObject? appliedOverride = null)
     {
         return new JsonObject
         {
@@ -270,7 +687,7 @@ public static class CampaignStateFactory
             ["Success"] = success,
             ["Errors"] = new JsonArray(),
             ["CurState"] = stateOverride?.DeepClone() ?? record.State.DeepClone(),
-            ["Applied"] = EmptyAppliedUpdates(),
+            ["Applied"] = appliedOverride ?? EmptyAppliedUpdates(),
         };
     }
 
@@ -320,6 +737,13 @@ public static class CampaignStateFactory
                 nodesPrefab = CampaignCrayburnConfig.DungeonNodesPrefab;
                 campaignTemplateId = CampaignCrayburnConfig.DungeonCampaignTemplateId;
                 break;
+            case "AREA":
+                assetBundle = string.Empty;
+                levelPrefab = string.Empty;
+                backgroundPrefab = CampaignAz1Config.BackgroundPrefab;
+                nodesPrefab = CampaignAz1Config.NodesPrefab;
+                campaignTemplateId = CampaignAz1Config.CampaignTemplateId;
+                break;
             case "QUEST":
                 // QUEST is journal state, not a rendered scene. Keep summary identity
                 // type-correct without assigning panorama/dungeon scene prefabs.
@@ -327,7 +751,7 @@ public static class CampaignStateFactory
                 levelPrefab = string.Empty;
                 backgroundPrefab = string.Empty;
                 nodesPrefab = string.Empty;
-                campaignTemplateId = CampaignCrayburnConfig.QuestTemplateId;
+                campaignTemplateId = record.State["QuestTemplateId"]?.ToString() ?? CampaignCrayburnConfig.QuestTemplateId;
                 break;
             default:
                 campType = 6;
@@ -377,6 +801,66 @@ public static class CampaignStateFactory
         MercInfos = Array.Empty<object>(),
         AccountFlags = Array.Empty<object>(),
     });
+
+    /// <summary>
+    /// After the Crayburn report, the race's original introductory NPC offers
+    /// the authored travel conversation. The change is safe to replay for a
+    /// completed report on an existing saved starter panorama.
+    /// </summary>
+    public static bool PreparePostCrayburnTravel(JsonObject state, CampaignRaceConfig cfg)
+    {
+        var changed = false;
+        if (state["VisLocs"] is not JsonArray locations)
+        {
+            locations = new JsonArray();
+            state["VisLocs"] = locations;
+            changed = true;
+        }
+
+        var intro = locations.OfType<JsonObject>()
+            .Select(static location => location["Data"] as JsonObject)
+            .FirstOrDefault(data => data is not null &&
+                (string.Equals(data["node"]?.ToString(), cfg.IntroNpc, StringComparison.Ordinal)
+                 || string.Equals(data["name"]?.ToString(), cfg.IntroNpc, StringComparison.Ordinal)));
+
+        if (intro is null)
+        {
+            var location = ConversationLocation(cfg.IntroNpc, cfg.TransitionConversation, giveQuest: true);
+            locations.Add(location);
+            changed = true;
+        }
+        else
+        {
+            changed |= SetValue(intro, "name", JsonValue.Create(cfg.IntroNpc));
+            changed |= SetValue(intro, "node", JsonValue.Create(cfg.IntroNpc));
+            changed |= SetValue(intro, "type", JsonValue.Create("Convo"));
+            changed |= SetValue(intro, "conversationId", JsonValue.Create(cfg.TransitionConversation));
+            changed |= SetValue(intro, "encounter", null);
+            changed |= SetValue(intro, "completed", JsonValue.Create(false));
+            changed |= SetValue(intro, "enabled", JsonValue.Create(true));
+            changed |= SetValue(intro, "visible", JsonValue.Create(true));
+            changed |= SetValue(intro, "repeatable", JsonValue.Create(false));
+            changed |= SetValue(intro, "givequest", JsonValue.Create(true));
+            changed |= SetValue(intro, "turninquest", JsonValue.Create(false));
+            changed |= SetValue(intro, "autostart", JsonValue.Create(false));
+        }
+
+        changed |= SetValue(state, "PostCrayburnReport", JsonValue.Create(true));
+        if (string.Equals(state["ALoc"]?.ToString(), cfg.QuestNpc, StringComparison.Ordinal))
+        {
+            state["ALoc"] = null;
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static bool SetValue(JsonObject target, string key, JsonNode? desired)
+    {
+        if (JsonNode.DeepEquals(target[key], desired))
+            return false;
+        target[key] = desired?.DeepClone();
+        return true;
+    }
 
     public static JsonObject ConversationLocation(string name, string conversationId, bool giveQuest = false)
     {

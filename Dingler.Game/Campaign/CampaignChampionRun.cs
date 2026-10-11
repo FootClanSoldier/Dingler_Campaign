@@ -2,7 +2,7 @@ namespace Dingler.Game.Campaign;
 
 /// <summary>
 /// Persisted owner for one PvE champion. Champion-owned deck/talent data and the
-/// currently rendered scene live here, while PANORAMA/QUEST/DUNGEON instances keep
+/// currently rendered scene live here, while PANORAMA/QUEST/DUNGEON/AREA instances keep
 /// their own stable campaign identities in <see cref="Campaigns"/>.
 /// </summary>
 public sealed class CampaignChampionRun

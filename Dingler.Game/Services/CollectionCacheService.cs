@@ -23,6 +23,8 @@ namespace Dingler.Game.Services
         private readonly string _path;
         private bool _isInitialized;
         public Dictionary<ulong, ResourceId> CollectionIds { get; set; } = new();
+        private readonly List<card_instance_bits> _baseCardInstances = new();
+        private readonly Dictionary<(int Race, string Choice), ulong> _shroomRewardIds = new();
 
         private readonly Dingler.Game.Arena.ArenaRunStore? _arenaRunStore;
         private readonly CampaignOptions? _campaignOptions;
@@ -105,12 +107,44 @@ namespace Dingler.Game.Services
                 }
             }
 
+            _baseCardInstances.AddRange(cardList);
+            // Reserve deterministic instance IDs for each bootstrap champion's
+            // possible reward. Ownership is still per-profile and per-choice.
+            foreach (var race in Enumerable.Range(1, 8))
+            {
+                foreach (var choice in CampaignShroomRewardCatalog.ChoiceIds)
+                {
+                    var id = (ulong)CollectionIds.Count + 1;
+                    _shroomRewardIds.Add((race, choice), id);
+                    CollectionIds.Add(id, new ResourceId(choice));
+                }
+            }
+
             var collection = new card_collection()
             {
                 Cards = cardList,
             };
 
             return EncData.Encode(collection);
+        }
+
+        public bool TryGetShroomRewardInstanceId(int race, string choice, out ulong instanceId) =>
+            _shroomRewardIds.TryGetValue((race, choice.ToLowerInvariant()), out instanceId);
+
+        private byte[] ProfileCardCollection(ulong profileId)
+        {
+            if (_campaignRunStore is null)
+                return Cards;
+            var earned = _campaignRunStore.GetProfileShroomRewards(profileId);
+            if (earned.Count == 0)
+                return Cards;
+            var cards = new List<card_instance_bits>(_baseCardInstances);
+            foreach (var (race, choice) in earned)
+            {
+                if (TryGetShroomRewardInstanceId(race, choice, out var id))
+                    cards.Add(new card_instance_bits { Id = id, TemplateID = new ResourceId(choice) });
+            }
+            return EncData.Encode(new card_collection { Cards = cards });
         }
 
         public async Task SendProfileStreamAsync(SessionContext context, Task<List<Deck>> deckTask,
@@ -141,7 +175,14 @@ namespace Dingler.Game.Services
 
             var reckoningBits = new reckoning_bits()
             {
-                Gold = 0,
+                // TODO: Temporary solution for Gaal Camp. The original HEX
+                // dialogue requires 100 Gold before emitting gaal_camp_accept.
+                // Show a development-only client prerequisite balance for PvE
+                // bootstrap profiles until persistent currency/debit exists.
+                // The original HasCurrency check uses > rather than >=, so
+                // a displayed 100 Gold did not satisfy the 100 Gold requirement.
+                // This is NOT an owned or spendable server-side Gold balance.
+                Gold = _campaignOptions?.BootstrapChampion == true ? 1000 : 0,
                 Platinum = 0,
                 Name = context.UserName,
                 Champions = campaignChampions,
@@ -235,7 +276,7 @@ namespace Dingler.Game.Services
                 EncData.Encode(identity),
                 EncData.Encode(keep),
                 EncData.Encode(reckoningBits),
-                Cards,
+                ProfileCardCollection(profileId),
                 Inventory
             ];
             
