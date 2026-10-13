@@ -1,4 +1,4 @@
-﻿extern alias HexGame;
+extern alias HexGame;
 using System.Net;
 using Dingler.Server;
 using Dingler.Server.Abstractions;
@@ -61,20 +61,9 @@ namespace Dingler.Game.CompositionRoot
                 var campaignStorePath = hb.Configuration["Campaign:StorePath"] is { Length: > 0 } configuredCampaignPath
                     ? configuredCampaignPath
                     : Path.Combine(AppContext.BaseDirectory, "data", "campaign");
-                var campaignDefaultRace = int.TryParse(hb.Configuration["Campaign:DefaultRace"], out var configuredRace)
-                    && configuredRace is >= 1 and <= 8 ? configuredRace : 1;
                 var campaignOptions = new CampaignOptions
                 {
                     StorePath = campaignStorePath,
-                    DefaultRace = campaignDefaultRace,
-                    BootstrapChampion = bool.TryParse(hb.Configuration["Campaign:BootstrapChampion"], out var bootstrapChampion)
-                                        && bootstrapChampion,
-                    BootstrapChampionName = hb.Configuration["Campaign:BootstrapChampionName"] is { Length: > 0 } championName
-                        ? championName : "CampaignTest",
-                    BootstrapChampionClass = int.TryParse(hb.Configuration["Campaign:BootstrapChampionClass"], out var championClass)
-                        ? championClass : 3,
-                    BootstrapChampionGender = int.TryParse(hb.Configuration["Campaign:BootstrapChampionGender"], out var championGender)
-                        ? championGender : 1,
                 };
                 var campaignRunStore = new CampaignRunStore(campaignOptions.StorePath);
                 sc.AddSingleton(campaignOptions);
@@ -93,7 +82,6 @@ namespace Dingler.Game.CompositionRoot
 
                 sc.AddSingletonStartupService(_ => new CollectionCacheService(
                         gameDataLocation, arenaRunStore, campaignOptions, campaignRunStore))
-                    .AddSingletonStartupService<CampaignQuestTemplateDiagnostics>()
                     .AddHttpClient("AuthClient", (sp, client) =>
                     {
                         var auth = sp.GetRequiredService<IOptions<AuthOptions>>().Value;

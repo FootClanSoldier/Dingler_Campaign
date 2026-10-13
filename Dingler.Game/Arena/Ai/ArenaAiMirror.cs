@@ -8,7 +8,7 @@ namespace Dingler.Game.Arena.Ai;
 /// <summary>
 /// The client-side session the client's AI (Game.Shared.AI.AITactical) needs: it refuses anything but a
 /// ClientSessionBase. Events are routed into it one by one; the AI's moves go straight to the authoritative engine.
-/// Livelock guard (docs/02 §4): the AI re-submits the same refused play whenever it gets priority back with an
+/// Livelock guard: the AI re-submits the same refused play whenever it gets priority back with an
 /// unchanged state; after 3 identical submissions in a row that card is left out of its options until the turn ends.
 /// </summary>
 internal sealed class ArenaAiMirror : ClientSessionBase

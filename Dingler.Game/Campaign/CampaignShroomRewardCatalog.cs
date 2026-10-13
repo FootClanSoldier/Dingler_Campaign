@@ -7,8 +7,7 @@ using HexGame::Reckoning.Game;
 namespace Dingler.Game.Campaign;
 
 /// <summary>
-/// Interim AZ1 Shroom Haus card offers from IanUtley's client-data seed script.
-/// These are reference-server choices, not recovered original HEX rewards.
+/// Provisional AZ1 Shroom Haus card offers; these are not verified original HEX rewards.
 /// </summary>
 public static class CampaignShroomRewardCatalog
 {

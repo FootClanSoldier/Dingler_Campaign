@@ -3,9 +3,8 @@ using System.Text;
 namespace Dingler.Game.DeckImport;
 
 /// <summary>
-/// Reads a Hex Codex deck link code ("v1" + base64url(body + CRC-32)), the owner's site format (hex-codex
-/// src/lib/deck-link.ts, research 21 §3). Only reading is needed here, and only structure is checked; ids are the site's
-/// own (data/ids.json), looked up by <see cref="SiteIds"/>.
+/// Reads a Hex Codex deck link code ("v1" + base64url(body + CRC-32)).
+/// Only structure is validated; card IDs are resolved through <see cref="SiteIds"/>.
 ///   body  = uv(format) uv(champion) list(main) list(reserves) section*
 ///   list  = uv(n) entry*n     entry = uv(idGap) uv(copies*2 + hasGems) [ uv(k) uv(gemId)*k ]
 ///   section = uv(type) uv(length) byte*length   (type 1 = the deck's name; odd types may be skipped)

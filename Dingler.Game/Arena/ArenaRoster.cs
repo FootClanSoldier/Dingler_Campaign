@@ -6,7 +6,7 @@ using HexGame::Reckoning.Game;
 
 namespace Dingler.Game.Arena;
 
-/// <summary>The bracket groups of design 03 D1 (the 2018 roster: docs/04 §1b).</summary>
+/// <summary>The opponent groups for the 2018 Frost Ring bracket.</summary>
 public enum ArenaGroup
 {
 	Tier1Regular,   // 6 decks, 15 health

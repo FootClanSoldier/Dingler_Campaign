@@ -90,6 +90,9 @@ public sealed class CampaignBattleService
             refusal = $"invalid campaign session name '{sessionName}'";
         else if (!_store.TryGetByCampaignId(context.ProfileId, campaignId, out run))
             refusal = $"campaign {campaignId} was not found for this player";
+        else if (!_store.TryGetOwnedChampion(context.ProfileId, run.ChampionId,
+                     out _))
+            refusal = "campaign champion is not owned by this player";
         else if (!run.Started)
             refusal = $"campaign {campaignId} has not been started";
         else if (games.TryGetGameForPlayer(context.UserName!, out _))
@@ -166,6 +169,9 @@ public sealed class CampaignBattleService
             return Fail(pending.Refusal, out reason);
         if (!_store.TryGetByCampaignId(context.ProfileId, pending.CampaignId, out var run))
             return Fail("the campaign is gone", out reason);
+        if (!_store.TryGetOwnedChampion(context.ProfileId, run.ChampionId,
+                out var savedChampion))
+            return Fail("campaign champion is not owned by this player", out reason);
         if (!run.Started || run.ChampionId != pending.ChampionId)
             return Fail("the campaign changed since the battle was reserved", out reason);
 
@@ -195,8 +201,7 @@ public sealed class CampaignBattleService
         _active[context.ProfileId] = active;
         try
         {
-            var champion = CampaignBootstrapChampion.Create(
-                context.ProfileId, _options, run.Race, run.CampaignId, run.LastDeckId, run.ChampionTalents);
+            var champion = CampaignChampionProjection.CreateFromSaved(savedChampion);
             active.Game = games.CreateCampaignGame(
                 pending.GameId, pending.SessionState.SessionName, pending.SessionState.EncounterData,
                 joined.Human, context.Decks[run.LastDeckId], champion, context.UserName!,

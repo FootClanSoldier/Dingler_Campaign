@@ -1,20 +1,20 @@
 namespace Dingler.Game.Arena;
 
 /// <summary>
-/// Builds a new run's 20 fights by the owner's decisions (design 03 §8):
-/// D1-A, the 2018 bracket (docs/04 §1b-§2):
+/// Builds a 20-fight Frost Ring run:
+/// D1-A, the 2018 bracket:
 ///   tier 1 = 4 of the 6 tier-1 regulars + Eternal Guardian;
 ///   tiers 2-4 = 4 standard opponents, of which 1/2/2 are their Elite version, + a normal boss;
 ///   tier 4's boss = an Elite boss (the final fight). No champion twice: an Elite counts as its normal version.
-/// Owner's update (2026-10-05, from an ex-player's memory, sources/): the Elites are always fights 9, 12, 14, 17 and 19
+/// Elite fights occupy fights 9, 12, 14, 17 and 19
 ///   (1-based), and each rare encounter (Uruunaz, Zakiir) is rolled once per run at 1% and replaces one of the normal
-///   regular fights 6, 7, 8, 11, 13, 16 or 18 (was D1b-A: 1 in 200, never a tier's first fight).
-/// D3-A/D4-A, one of Hogarth's 21 challenges on a random regular fight of each tier.
+///   regular fights 6, 7, 8, 11, 13, 16 or 18 (never a tier's first fight).
+/// One of Hogarth's 21 challenges appears on a random regular fight of each tier.
 /// </summary>
 public static class ArenaBracketBuilder
 {
 	public const double RareChancePerRun = 0.01;                 // per rare encounter, per run
-	// Fixed Elite slots (0-based orders = fights 9, 12, 14, 17, 19): 1/2/2 in tiers 2-4, the counts in docs/04 §2.
+	// Fixed Elite slots (0-based orders = fights 9, 12, 14, 17, 19): 1/2/2 in tiers 2-4.
 	private static readonly HashSet<int> EliteOrders = new() { 8, 11, 13, 16, 18 };
 	// The normal regular fights a rare encounter may replace (fights 6, 7, 8, 11, 13, 16, 18).
 	private static readonly int[] RareOrders = { 5, 6, 7, 10, 12, 15, 17 };

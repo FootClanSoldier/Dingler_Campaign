@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Security.Cryptography;
 using Dingler.Game.Protocol;
 
 namespace Dingler.Game.Campaign;
@@ -32,7 +33,7 @@ public sealed record CampaignAreaTravelResult(
 /// </summary>
 public sealed class CampaignRunStore
 {
-    private const int CurrentFormatVersion = 2;
+    private const int CurrentFormatVersion = 3;
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
     private readonly string _folder;
@@ -44,6 +45,126 @@ public sealed class CampaignRunStore
     public CampaignRunStore(string folder)
     {
         _folder = folder;
+    }
+
+    /// <summary>
+    /// Existing explicitly created champions only. Files without the creation marker are
+    /// preserved but not included in a normal profile stream.
+    /// </summary>
+    public IReadOnlyList<CampaignChampionRun> GetCreatedChampions(ulong profileId)
+    {
+        lock (_gate)
+            return EnumerateCreatedLocked(profileId).OrderBy(static champion => champion.ChampionId).ToArray();
+    }
+
+    public bool TryGetOwnedChampion(ulong profileId, ulong championId, out CampaignChampionRun champion)
+    {
+        lock (_gate)
+        {
+            var saved = LoadCachedLocked(profileId, championId);
+            if (saved is { IsPlayerCreated: true } && saved.ProfileId == profileId)
+            {
+                champion = saved;
+                return true;
+            }
+            champion = null!;
+            return false;
+        }
+    }
+
+    /// <summary>Create a player-owned champion and its starter PANORAMA as one JSON aggregate.</summary>
+    public CampaignChampionRun CreateChampion(ulong profileId, string name, int race, int championClass,
+        int gender, string petName)
+    {
+        lock (_gate)
+        {
+            var existing = EnumerateCreatedLocked(profileId);
+            if (existing.Count >= 20)
+                throw new InvalidOperationException("Champion limit reached (20)");
+            if (existing.Any(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase)))
+                throw new ArgumentException("A champion with this name already exists", nameof(name));
+
+            ulong championId;
+            Span<byte> bytes = stackalloc byte[8];
+            do
+            {
+                RandomNumberGenerator.Fill(bytes);
+                // HEX UID stores its type in the low byte and the instance ID in 56 bits.
+                // Keep player-created IDs in the upper half of that valid instance range.
+                championId = (BitConverter.ToUInt64(bytes) & 0x007FFFFFFFFFFFFFUL) | (1UL << 55);
+            }
+            while (File.Exists(PathFor(profileId, championId)) ||
+                   _cache.ContainsKey((profileId, championId)));
+
+            var champion = new CampaignChampionRun
+            {
+                ProfileId = profileId,
+                ChampionId = championId,
+                IsPlayerCreated = true,
+                Name = name,
+                Race = race,
+                ChampionClass = championClass,
+                Gender = gender,
+                PetName = petName,
+            };
+            var panorama = new CampaignRunRecord
+            {
+                CampaignId = NewCampaignIdLocked(),
+                CampaignType = "PANORAMA",
+                TemplateName = "AZ1",
+            };
+            AttachOwnerLocked(champion, panorama);
+            panorama.State = CampaignStateFactory.CreateStarterPanoramaState(panorama);
+            champion.Campaigns.Add(panorama);
+            champion.CurrentCampaignId = panorama.CampaignId;
+            SaveLocked(champion);
+            return champion;
+        }
+    }
+
+    /// <summary>Only rollback a fresh, unplayed creation if deck provisioning fails.</summary>
+    public void RollbackUninitializedChampion(ulong profileId, ulong championId)
+    {
+        lock (_gate)
+        {
+            var champion = LoadCachedLocked(profileId, championId);
+            if (champion is not { IsPlayerCreated: true, LastDeckId: 0 } ||
+                champion.Campaigns.Count != 1 || champion.Campaigns[0].Started)
+                return;
+            var path = PathFor(profileId, championId);
+            if (File.Exists(path))
+                File.Delete(path);
+            _cache.Remove((profileId, championId));
+        }
+    }
+
+    private List<CampaignChampionRun> EnumerateCreatedLocked(ulong profileId)
+    {
+        var result = new List<CampaignChampionRun>();
+        if (!Directory.Exists(_folder))
+            return result;
+        foreach (var path in Directory.EnumerateFiles(_folder, $"campaign-{profileId}-*.json"))
+        {
+            // Avoid migrating/rewriting the dormant legacy saves merely to list heroes.
+            try
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(path));
+                var root = document.RootElement;
+                if (!root.TryGetProperty("IsPlayerCreated", out var marker) ||
+                    marker.ValueKind != JsonValueKind.True ||
+                    !root.TryGetProperty("ChampionId", out var idValue) ||
+                    !idValue.TryGetUInt64(out var id))
+                    continue;
+                var champion = LoadCachedLocked(profileId, id);
+                if (champion is { IsPlayerCreated: true } && champion.ProfileId == profileId)
+                    result.Add(champion);
+            }
+            catch (Exception ex)
+            {
+                StaticLogger.LogWarning("Campaign: could not enumerate champion file {path}: {error}", path, ex.Message);
+            }
+        }
+        return result;
     }
 
     public CampaignRunRecord GetOrCreate(ulong profileId, ulong championId, int race)
@@ -159,6 +280,29 @@ public sealed class CampaignRunStore
         }
     }
 
+    /// <summary>
+    /// Read an existing faction quest, including a finished journal entry.
+    /// Looking up conversation prerequisites must never create a quest.
+    /// </summary>
+    public bool TryGetQuest(ulong profileId, ulong championId, string script, out CampaignRunRecord quest)
+    {
+        lock (_gate)
+        {
+            var champion = LoadCachedLocked(profileId, championId);
+            var found = champion?.Campaigns.FirstOrDefault(record =>
+                string.Equals(record.CampaignType, "QUEST", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(record.TemplateName, script, StringComparison.OrdinalIgnoreCase));
+            if (found is null)
+            {
+                quest = null!;
+                return false;
+            }
+            AttachOwnerLocked(champion!, found);
+            quest = found;
+            return true;
+        }
+    }
+
     public void Save(CampaignRunRecord record)
     {
         lock (_gate)
@@ -250,6 +394,51 @@ public sealed class CampaignRunStore
                 }
             }
             return result;
+        }
+    }
+
+    /// <summary>
+    /// Profile projection of cards earned from native TamedCards receipts.
+    /// These receipts are separate from the victory currency display and
+    /// survive login without replaying game-end notifications.
+    /// </summary>
+    public IReadOnlyList<(int Race, string Encounter, string RuleId, string Template)> GetProfileCaptureRewards(ulong profileId)
+    {
+        lock (_gate)
+        {
+            var result = new List<(int Race, string Encounter, string RuleId, string Template)>();
+            if (!Directory.Exists(_folder))
+                return result;
+            foreach (var path in Directory.EnumerateFiles(_folder, $"campaign-{profileId}-*.json"))
+            {
+                var owner = LoadPathLocked(path);
+                if (owner is null || owner.ProfileId != profileId || owner.Race is < 1 or > 8)
+                    continue;
+                foreach (var run in owner.Campaigns)
+                {
+                    if (run.RewardClaims is null)
+                        continue;
+                    foreach (var (claim, template) in run.RewardClaims)
+                    {
+                        var separator = claim.IndexOf(':');
+                        if (separator < 0 || !Guid.TryParse(claim[..separator], out var encounterId)
+                            || !Guid.TryParse(template, out var templateId))
+                            continue;
+                        var encounter = encounterId.ToString("D");
+                        var ruleId = claim[(separator + 1)..];
+                        if (!CampaignRewardCatalog.TryGet(encounter, out var entry))
+                            continue;
+                        var reward = entry.Rewards.FirstOrDefault(rule =>
+                            string.Equals(rule.Id, ruleId, StringComparison.OrdinalIgnoreCase)
+                            && rule.Grants.Any(grant => grant.Type == "CapturedCard"));
+                        if (reward is null || !CampaignRewardConditionEvaluator.CaptureTemplateGuids(reward.Conditions)
+                            .Contains(templateId.ToString("D"), StringComparer.OrdinalIgnoreCase))
+                            continue;
+                        result.Add((owner.Race, encounter, reward.Id, templateId.ToString("D")));
+                    }
+                }
+            }
+            return result.Distinct().ToArray();
         }
     }
 

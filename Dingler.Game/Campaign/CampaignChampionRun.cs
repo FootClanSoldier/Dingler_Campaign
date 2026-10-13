@@ -7,7 +7,13 @@ namespace Dingler.Game.Campaign;
 /// </summary>
 public sealed class CampaignChampionRun
 {
-    public int FormatVersion { get; set; } = 2;
+    public int FormatVersion { get; set; } = 3;
+    // A missing marker denotes a pre-existing test/legacy aggregate, never a created character.
+    public bool IsPlayerCreated { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int ChampionClass { get; set; }
+    public int Gender { get; set; }
+    public string PetName { get; set; } = string.Empty;
     public ulong ProfileId { get; set; }
     public ulong ChampionId { get; set; }
     public int Race { get; set; }

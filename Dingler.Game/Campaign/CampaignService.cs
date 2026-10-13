@@ -21,15 +21,14 @@ public sealed class CampaignService
     private static readonly Guid DunnwoodDireToadTemplate = new("c0bb008e-17c5-4e73-baf9-5cbd8f3eb6dc");
 
     private readonly CampaignRunStore _store;
-    private readonly CampaignOptions _options;
+    private readonly CampaignRewardService _rewards = new();
     private readonly CollectionCacheService _collection;
     private readonly ILogger<CampaignService>? _logger;
 
-    public CampaignService(CampaignRunStore store, CampaignOptions options,
+    public CampaignService(CampaignRunStore store,
         CollectionCacheService collection, ILogger<CampaignService>? logger = null)
     {
         _store = store;
-        _options = options;
         _collection = collection;
         _logger = logger;
     }
@@ -61,15 +60,27 @@ public sealed class CampaignService
         return JsonSerializer.SerializeToUtf8Bytes(response);
     }
 
-    private int RaceForChampion(ulong profileId, ulong championId)
+    private bool TryGetChampionRace(ulong profileId, ulong championId, out int race)
     {
-        if (CampaignBootstrapChampion.TryResolveChampionId(profileId, championId, out var rawId, out var race)
-            && rawId == championId)
-            return race;
+        if (_store.TryGetOwnedChampion(profileId, championId, out var champion))
+        {
+            race = champion.Race;
+            return true;
+        }
+        race = 0;
+        return false;
+    }
 
-        return _store.TryGet(profileId, championId, out var existing)
-            ? existing.Race
-            : _options.DefaultRace;
+    private bool TryGetOwnedCampaign(ulong profileId, ulong campaignId, out CampaignRunRecord record)
+    {
+        if (_store.TryGetByCampaignId(profileId, campaignId, out var found) &&
+            TryGetChampionRace(profileId, found.ChampionId, out _))
+        {
+            record = found;
+            return true;
+        }
+        record = null!;
+        return false;
     }
 
     private JsonNode QueryCurrent(SessionContext context, JsonElement root)
@@ -77,7 +88,9 @@ public sealed class CampaignService
         var championId = ULong(root, "ChampID");
         if (championId == 0)
             return CampaignStateFactory.BuildFailure(0, "ChampID is required");
-        var record = _store.GetOrCreate(context.ProfileId, championId, RaceForChampion(context.ProfileId, championId));
+        if (!TryGetChampionRace(context.ProfileId, championId, out var race))
+            return CampaignStateFactory.BuildFailure(0, "Champion not found");
+        var record = _store.GetOrCreate(context.ProfileId, championId, race);
         PrepareAz1Opening(record);
         BackfillAz1OpeningQuests(context, record);
         return CampaignStateFactory.BuildInputResponse(record);
@@ -94,8 +107,10 @@ public sealed class CampaignService
         if (requestedType == 0 && string.IsNullOrWhiteSpace(templateName))
             return QueryCurrent(context, root);
 
+        if (!TryGetChampionRace(context.ProfileId, championId, out var race))
+            return CampaignStateFactory.BuildFailure(0, "Champion not found");
         var existing = _store.GetActive(
-            context.ProfileId, championId, RaceForChampion(context.ProfileId, championId), requestedType, templateName);
+            context.ProfileId, championId, race, requestedType, templateName);
         return existing.Count > 0
             ? CampaignStateFactory.BuildInputResponse(existing[0])
             : CampaignStateFactory.BuildFailure(0, "Requested campaign is not available");
@@ -109,8 +124,10 @@ public sealed class CampaignService
 
         var requestedType = Int(root, "CampType", 0);
         var templateName = RequestTemplateName(root);
+        if (!TryGetChampionRace(context.ProfileId, championId, out var race))
+            return new JsonArray();
         var records = _store.GetActive(
-            context.ProfileId, championId, RaceForChampion(context.ProfileId, championId), requestedType, templateName);
+            context.ProfileId, championId, race, requestedType, templateName);
         var result = new JsonArray();
         foreach (var record in records)
             result.Add(CampaignStateFactory.BuildTemplateInfo(record));
@@ -120,7 +137,7 @@ public sealed class CampaignService
     private JsonNode GetCampaignState(SessionContext context, JsonElement root)
     {
         var campaignId = ULong(root, "CampID");
-        if (!_store.TryGetByCampaignId(context.ProfileId, campaignId, out var record))
+        if (!TryGetOwnedCampaign(context.ProfileId, campaignId, out var record))
             return CampaignStateFactory.BuildFailure(campaignId, "Campaign not found");
         PrepareAz1Opening(record);
         BackfillAz1OpeningQuests(context, record);
@@ -130,7 +147,7 @@ public sealed class CampaignService
     private JsonNode StartCampaign(SessionContext context, JsonElement root)
     {
         var campaignId = ULong(root, "CampID");
-        if (!_store.TryGetByCampaignId(context.ProfileId, campaignId, out var record))
+        if (!TryGetOwnedCampaign(context.ProfileId, campaignId, out var record))
             return CampaignStateFactory.BuildFailure(campaignId, "Campaign not found");
 
         PrepareAz1Opening(record);
@@ -150,7 +167,7 @@ public sealed class CampaignService
         var result = new JsonArray();
         foreach (var campaignId in CampaignIds(root))
         {
-            if (_store.TryGetByCampaignId(context.ProfileId, campaignId, out var record))
+            if (TryGetOwnedCampaign(context.ProfileId, campaignId, out var record))
                 result.Add(CampaignStateFactory.BuildCampSummary(record));
         }
         return result;
@@ -159,7 +176,7 @@ public sealed class CampaignService
     private JsonNode LocationAction(SessionContext context, JsonElement root)
     {
         var campaignId = ULong(root, "CampID");
-        if (!_store.TryGetByCampaignId(context.ProfileId, campaignId, out var record))
+        if (!TryGetOwnedCampaign(context.ProfileId, campaignId, out var record))
             return CampaignStateFactory.BuildFailure(campaignId, "Campaign not found");
 
         PrepareAz1Opening(record);
@@ -189,6 +206,9 @@ public sealed class CampaignService
             if (node == CampaignAz1Config.SutherlandNode
                 && !CampaignAz1AuthoredCatalog.TryGetSutherland(out _, out _))
                 return CampaignStateFactory.BuildFailure(campaignId, "Authored Cockatwice encounter is unavailable");
+            if (node == CampaignAz1Config.ValeNode
+                && !CampaignAz1AuthoredCatalog.TryGetValeOfOberon(out _, out _, out _))
+                return CampaignStateFactory.BuildFailure(campaignId, "Authored Vale of Oberon conversation is unavailable");
             if (node == CampaignAz1Config.OaksNode
                 && !CampaignAz1AuthoredCatalog.TryGetGaalCamp(out _, out _, out _))
                 return CampaignStateFactory.BuildFailure(campaignId, "Authored Gaal Camp conversation is unavailable");
@@ -247,7 +267,7 @@ public sealed class CampaignService
     private JsonNode SendEvent(SessionContext context, JsonElement root)
     {
         var campaignId = ULong(root, "CampID");
-        if (!_store.TryGetByCampaignId(context.ProfileId, campaignId, out var record))
+        if (!TryGetOwnedCampaign(context.ProfileId, campaignId, out var record))
             return CampaignStateFactory.BuildFailure(campaignId, "Campaign not found");
 
         PrepareAz1Opening(record);
@@ -454,7 +474,7 @@ public sealed class CampaignService
         bool won,
         IReadOnlyList<Guid>? capturedTemplates = null)
     {
-        if (!_store.TryGetByCampaignId(context.ProfileId, campaignId, out var record))
+        if (!TryGetOwnedCampaign(context.ProfileId, campaignId, out var record))
         {
             _logger?.LogWarning(
                 "Campaign: battle result ignored; campaign {campaign} was not found for {user}",
@@ -511,7 +531,7 @@ public sealed class CampaignService
             wildCub["completed"] = tamedDireToad;
             wildCub["repeatable"] = won && !tamedDireToad;
             wildCub["autostart"] = false;
-            record.State["ALoc"] = null;
+            SetEncounterReturnLocation(record, wildCub, won);
             record.State["LastNode"] = CampaignAz1Config.ThirdNode;
             record.State["CurState"] = "EXPLORE";
             record.State.Remove("ActiveEncounterGuid");
@@ -566,7 +586,7 @@ public sealed class CampaignService
                 cockatwice["type"] = "None";
                 cockatwice["encounter"] = null;
             }
-            record.State["ALoc"] = null;
+            SetEncounterReturnLocation(record, cockatwice, won);
             record.State["LastNode"] = CampaignAz1Config.SutherlandNode;
             record.State["CurState"] = "EXPLORE";
             record.State.Remove("ActiveEncounterGuid");
@@ -587,7 +607,19 @@ public sealed class CampaignService
         if (string.Equals(record.CampaignType, "AREA", StringComparison.OrdinalIgnoreCase))
             TraceAz1Map(record, true);
 
+        // Evaluate independent victory and conditional capture reward rules.
+        // Gold/XP remain display-only until shared progression services
+        // support actual currency and champion XP grants.
+        var applied = _rewards.Apply(record, encounterGuid, won, capturedTemplates,
+            (encounter, ruleId, template) =>
+                _collection.TryGetCaptureRewardInstanceId(record.Race, encounter, ruleId, template, out var id)
+                    ? id : null,
+            out var rewardSummary);
         _store.Save(record);
+        if (won)
+            _logger?.LogInformation(
+                "Campaign: reward encounter={encounter} camp={campaign}: {summary}; XP/Gold display-only",
+                encounterGuid, record.CampaignId, rewardSummary);
 
         var notifyEnvelope = new JsonObject
         {
@@ -596,7 +628,7 @@ public sealed class CampaignService
             ["RequestType"] = "gameendnotify",
             ["ChampID"] = record.ChampionId,
             ["GameState"] = record.State.DeepClone(),
-            ["Applied"] = CampaignStateFactory.EmptyAppliedUpdates(),
+            ["Applied"] = applied,
             ["WinLose"] = won,
         };
 
@@ -622,6 +654,19 @@ public sealed class CampaignService
             SendTamedQuestProgress(context, tamedQuest);
 
         return sent;
+    }
+
+    /// <summary>
+    /// Keep an incomplete encounter selected for the client's battle confirmation
+    /// after a defeat or an authored defeat dialogue. Wins clear the selection.
+    /// </summary>
+    private static void SetEncounterReturnLocation(CampaignRunRecord record, JsonObject location, bool won)
+    {
+        record.State["ALoc"] = !won
+            && string.Equals(location["type"]?.ToString(), "Encounter", StringComparison.Ordinal)
+            && location["completed"]?.GetValue<bool>() != true
+                ? location["name"]?.GetValue<string>()
+                : null;
     }
 
     /// <summary>
@@ -980,6 +1025,33 @@ public sealed class CampaignService
         _store.Save(record);
     }
 
+    // Preserve the active location through Convo -> Encounter so the original
+    // client's state-change callback opens the battle panel without another Explore.
+    // A cancelled panel clears ALoc through the existing enc_cancel handler.
+    private static bool TryCompleteAz1EncounterPrelude(
+        CampaignRunRecord record, string node, string encounterId, string preludeId)
+    {
+        if (!string.Equals(record.CampaignType, "AREA", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(CampaignAz1Config.OpeningNode(record.State["ALoc"]?.ToString()),
+                node, StringComparison.Ordinal))
+            return false;
+
+        var location = FindLocation(record.State, node);
+        if (location is null || location["type"]?.ToString() != "Convo"
+            || location["completed"]?.GetValue<bool>() == true
+            || location["pre_encounter_completed"]?.GetValue<bool>() == true
+            || !string.Equals(location["conversationId"]?.ToString(), preludeId, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        location["pre_encounter_completed"] = true;
+        location["type"] = "Encounter";
+        location["encounter"] = encounterId;
+        location["conversationId"] = null;
+        location["autostart"] = false;
+        record.State["CurState"] = "EXPLORE";
+        return true;
+    }
+
     private CampaignRunRecord CompleteConversation(SessionContext context, CampaignRunRecord record)
     {
         if (string.Equals(record.CampaignType, "AREA", StringComparison.OrdinalIgnoreCase)
@@ -1025,22 +1097,12 @@ public sealed class CampaignService
             && string.Equals(CampaignAz1Config.OpeningNode(record.State["ALoc"]?.ToString()),
                 CampaignAz1Config.ThirdNode, StringComparison.Ordinal))
         {
-            var wildCub = FindLocation(record.State, CampaignAz1Config.ThirdNode);
-            if (wildCub is not null && wildCub["type"]?.ToString() == "Convo"
-                && wildCub["pre_encounter_completed"]?.GetValue<bool>() != true
-                && CampaignAz1AuthoredCatalog.TryGetDunnwood(out var scene, out var prelude)
-                && string.Equals(wildCub["conversationId"]?.ToString(), prelude, StringComparison.OrdinalIgnoreCase))
+            if (CampaignAz1AuthoredCatalog.TryGetDunnwood(out var scene, out var prelude)
+                && TryCompleteAz1EncounterPrelude(record, CampaignAz1Config.ThirdNode, scene, prelude))
             {
-                wildCub["pre_encounter_completed"] = true;
-                wildCub["type"] = "Encounter";
-                wildCub["encounter"] = scene;
-                wildCub["conversationId"] = null;
-                wildCub["autostart"] = false;
-                record.State["ALoc"] = null;
-                record.State["CurState"] = "EXPLORE";
                 _store.Save(record);
                 QueueAz1OpeningProgress(context, record);
-                _logger?.LogInformation("Campaign: Dunnwood Feralroot Bear prelude completed; Wild Cub encounter={scene} ready at Node003", scene);
+                _logger?.LogInformation("Campaign: Dunnwood Feralroot Bear prelude completed; Wild Cub encounter={scene} active at Node003", scene);
             }
             return record;
         }
@@ -1049,19 +1111,13 @@ public sealed class CampaignService
             && string.Equals(CampaignAz1Config.OpeningNode(record.State["ALoc"]?.ToString()),
                 CampaignAz1Config.SutherlandNode, StringComparison.Ordinal))
         {
-            var location = FindLocation(record.State, CampaignAz1Config.SutherlandNode);
-            if (location?["type"]?.ToString() == "Convo"
-                && location["pre_encounter_completed"]?.GetValue<bool>() != true
-                && CampaignAz1AuthoredCatalog.TryGetSutherland(out var scene, out var prelude)
-                && string.Equals(location["conversationId"]?.ToString(), prelude, StringComparison.OrdinalIgnoreCase))
+            if (CampaignAz1AuthoredCatalog.TryGetSutherland(out var scene, out var prelude)
+                && TryCompleteAz1EncounterPrelude(record, CampaignAz1Config.SutherlandNode, scene, prelude))
             {
-                location["pre_encounter_completed"] = true;
                 CampaignStateFactory.PrepareAz1Sutherland(record.State, scene, prelude);
-                record.State["ALoc"] = null;
-                record.State["CurState"] = "EXPLORE";
                 _store.Save(record);
                 QueueAz1OpeningProgress(context, record, "az1_cockatwice_prelude");
-                _logger?.LogInformation("Campaign: Cockatwice prelude completed; encounter={scene} ready at Node009", scene);
+                _logger?.LogInformation("Campaign: Cockatwice prelude completed; encounter={scene} active at Node009", scene);
             }
             else
                 _logger?.LogWarning("Campaign: ignored Node009 conv_done without authored Cockatwice prelude");
@@ -1083,16 +1139,48 @@ public sealed class CampaignService
                 CampaignStateFactory.PrepareAz1GaalCamp(record.State, first, repeat, fortune);
                 if (CampaignAz1AuthoredCatalog.TryGetSutherland(out var sutherlandScene, out var sutherlandPrelude))
                     CampaignStateFactory.PrepareAz1Sutherland(record.State, sutherlandScene, sutherlandPrelude);
+                if (CampaignAz1AuthoredCatalog.TryGetValeOfOberon(out var step1, out var step2, out var step3))
+                {
+                    var (hasQuest, questFinished) = ValeFactionQuestStatus(record);
+                    CampaignStateFactory.PrepareAz1ValeOfOberon(record.State, step1, step2, step3, hasQuest, questFinished);
+                }
                 if (developmentChoice)
                     _logger?.LogInformation("Campaign: Gaal Camp development choice completed without Fortune effect");
                 record.State["ALoc"] = null;
                 record.State["CurState"] = "EXPLORE";
                 _store.Save(record);
                 QueueAz1OpeningProgress(context, record, "az1_gaal_complete");
-                _logger?.LogInformation("Campaign: Gaal Camp conversation closed; visits={visits}, Node009 available when authored content resolves", camp["gaal_visits"]);
+                _logger?.LogInformation("Campaign: Gaal Camp conversation closed; visits={visits}, Node009/Node00R available when authored content resolves", camp["gaal_visits"]);
             }
             else
                 _logger?.LogWarning("Campaign: ignored Gaal Camp conv_done without verified active dialogue");
+            return record;
+        }
+
+        if (string.Equals(record.CampaignType, "AREA", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(CampaignAz1Config.OpeningNode(record.State["ALoc"]?.ToString()),
+                CampaignAz1Config.ValeNode, StringComparison.Ordinal))
+        {
+            var vale = FindLocation(record.State, CampaignAz1Config.ValeNode);
+            if (vale is not null && vale["type"]?.ToString() == "Convo"
+                && CampaignAz1AuthoredCatalog.TryGetValeOfOberon(out var step1, out var step2, out var step3)
+                && new[] { step1, step2, step3 }.Contains(vale["conversationId"]?.ToString(), StringComparer.OrdinalIgnoreCase))
+            {
+                var terminal = string.Equals(vale["conversationId"]?.ToString(), step3, StringComparison.OrdinalIgnoreCase);
+                vale["vale_visits"] = (vale["vale_visits"]?.GetValue<int>() ?? 0) + 1;
+                if (terminal)
+                    vale["completed"] = true;
+                var (hasQuest, questFinished) = ValeFactionQuestStatus(record);
+                CampaignStateFactory.PrepareAz1ValeOfOberon(record.State, step1, step2, step3, hasQuest, questFinished);
+                record.State["ALoc"] = null;
+                record.State["CurState"] = "EXPLORE";
+                _store.Save(record);
+                QueueAz1OpeningProgress(context, record, "az1_vale_conversation");
+                _logger?.LogInformation("Campaign: Vale of Oberon Masked Sergeant dialogue completed visits={visits} terminal={terminal}; onward paths remain gated",
+                    vale["vale_visits"], terminal);
+            }
+            else
+                _logger?.LogWarning("Campaign: ignored Vale of Oberon conv_done without verified active dialogue");
             return record;
         }
 
@@ -1244,16 +1332,25 @@ public sealed class CampaignService
             if (string.Equals(conversationId, reportConversation, StringComparison.OrdinalIgnoreCase)
                 && questLocation?["turninquest"]?.GetValue<bool>() == true)
             {
+                var questRewards = CampaignStateFactory.EmptyAppliedUpdates();
+                var rewardSummary = "none";
                 var turnIn = _store.TryApplyCrayburnQuestTurnIn(
                     record,
                     CampaignCrayburnConfig.QuestScriptName,
                     quest => CrayburnQuestReadyForReport(quest, reportConversation),
                     panorama => CrayburnPanoramaReadyForReport(panorama, cfg.QuestNpc, reportConversation),
-                    FinishCrayburnQuest,
+                    quest =>
+                    {
+                        FinishCrayburnQuest(quest);
+                        questRewards = _rewards.ApplyQuestCompletion(quest, out rewardSummary);
+                    },
                     panorama => FinishCrayburnReportPanorama(panorama, cfg));
                 if (turnIn is not null)
                 {
-                    QueueCrayburnQuestTurnIn(context, turnIn);
+                    QueueCrayburnQuestTurnIn(context, turnIn, questRewards);
+                    _logger?.LogInformation(
+                        "Campaign: reward quest={quest} camp={campaign}: {summary}; XP/Gold display-only",
+                        turnIn.Quest.TemplateName, turnIn.Quest.CampaignId, rewardSummary);
                     _logger?.LogInformation(
                         "Campaign: Crayburn report conversation {conversation} completed; quest={quest} Step2 finished; panorama={panorama} quest giver={npc}; travel npc={travelNpc} conversation={travelConversation}",
                         reportConversation, turnIn.Quest.CampaignId, turnIn.Panorama.CampaignId,
@@ -1694,7 +1791,7 @@ public sealed class CampaignService
         location["repeatable"] = false;
         location["autostart"] = false;
 
-        record.State["ALoc"] = null;
+        SetEncounterReturnLocation(record, location, won: false);
         record.State["LastNode"] = battle.ReturnNode;
         record.State["CurState"] = "EXPLORE";
         record.State.Remove("ActiveEncounterGuid");
@@ -1765,6 +1862,15 @@ public sealed class CampaignService
         location["autostart"] = false;
     }
 
+    private (bool HasQuest, bool Finished) ValeFactionQuestStatus(CampaignRunRecord area)
+    {
+        // The authored faction quest is distinct from the opening Find quest.
+        var script = area.Race is >= 1 and <= 4 ? "az01_q_usurper" : "az01_q_fort_romor";
+        if (!_store.TryGetQuest(area.ProfileId, area.ChampionId, script, out var quest))
+            return (false, false);
+        return (true, !string.IsNullOrWhiteSpace(quest.State["Finished"]?.ToString()));
+    }
+
     private void PrepareAz1Opening(CampaignRunRecord record)
     {
         if (!string.Equals(record.CampaignType, "AREA", StringComparison.OrdinalIgnoreCase)
@@ -1814,6 +1920,22 @@ public sealed class CampaignService
             }
             if (CampaignStateFactory.HasWonAz1Bear(record.State))
                 _logger?.LogWarning("Campaign: Gaal Camp Node007 disabled; original HEX scene/conversation templates not resolved");
+        }
+        if (CampaignAz1AuthoredCatalog.TryGetValeOfOberon(out var valeStep1, out var valeStep2, out var valeStep3))
+        {
+            var (hasQuest, questFinished) = ValeFactionQuestStatus(record);
+            changed |= CampaignStateFactory.PrepareAz1ValeOfOberon(record.State, valeStep1, valeStep2, valeStep3, hasQuest, questFinished);
+        }
+        else if (FindLocation(record.State, CampaignAz1Config.ValeNode) is JsonObject vale)
+        {
+            if (vale["enabled"]?.GetValue<bool>() == true || vale["visible"]?.GetValue<bool>() == true)
+            {
+                vale["enabled"] = false;
+                vale["visible"] = false;
+                changed = true;
+            }
+            if ((FindLocation(record.State, CampaignAz1Config.OaksNode)?["gaal_visits"]?.GetValue<int>() ?? 0) > 0)
+                _logger?.LogWarning("Campaign: Node00R unavailable; original Masked Sergeant scene/conversation not resolved");
         }
         if (CampaignAz1AuthoredCatalog.TryGetSutherland(out var sutherlandScene, out var sutherlandPrelude))
         {
@@ -1960,6 +2082,7 @@ public sealed class CampaignService
             CampaignAz1Config.StartingNode, CampaignAz1Config.NextNode,
             CampaignAz1Config.ThirdNode, CampaignAz1Config.FourthNode,
             CampaignAz1Config.OaksNode, CampaignAz1Config.SutherlandNode,
+            CampaignAz1Config.ValeNode,
         })
             if (FindLocation(state, node)?["enabled"]?.GetValue<bool>() == true)
                 allowed.Add(node);
@@ -2061,11 +2184,13 @@ public sealed class CampaignService
                 var fromCompleted = edge.From == CampaignAz1Config.StartingNode
                     || from?["completed"]?.GetValue<bool>() == true
                     || (edge.From == CampaignAz1Config.ThirdNode && CampaignStateFactory.HasWonAz1Bear(area.State))
-                    || (edge.From == CampaignAz1Config.OaksNode && (from?["gaal_visits"]?.GetValue<int>() ?? 0) > 0);
+                    || (edge.From == CampaignAz1Config.OaksNode && (from?["gaal_visits"]?.GetValue<int>() ?? 0) > 0)
+                    || (edge.From == CampaignAz1Config.ValeNode && (from?["vale_visits"]?.GetValue<int>() ?? 0) > 0);
                 var toCompleted = edge.To == CampaignAz1Config.StartingNode
                     || to?["completed"]?.GetValue<bool>() == true
                     || (edge.To == CampaignAz1Config.ThirdNode && CampaignStateFactory.HasWonAz1Bear(area.State))
-                    || (edge.To == CampaignAz1Config.OaksNode && (to?["gaal_visits"]?.GetValue<int>() ?? 0) > 0);
+                    || (edge.To == CampaignAz1Config.OaksNode && (to?["gaal_visits"]?.GetValue<int>() ?? 0) > 0)
+                    || (edge.To == CampaignAz1Config.ValeNode && (to?["vale_visits"]?.GetValue<int>() ?? 0) > 0);
                 if (!((fromCompleted && to?["enabled"]?.GetValue<bool>() == true)
                       || (toCompleted && from?["enabled"]?.GetValue<bool>() == true)))
                 {
@@ -2107,6 +2232,9 @@ public sealed class CampaignService
             return;
         if ((node == CampaignAz1Config.FourthNode || node == CampaignAz1Config.OaksNode)
             && !CampaignStateFactory.HasWonAz1Bear(area.State))
+            return;
+        if (node == CampaignAz1Config.ValeNode
+            && (FindLocation(area.State, CampaignAz1Config.OaksNode)?["gaal_visits"]?.GetValue<int>() ?? 0) == 0)
             return;
         if (node == CampaignAz1Config.SutherlandNode
             && (FindLocation(area.State, CampaignAz1Config.OaksNode)?["gaal_visits"]?.GetValue<int>() ?? 0) == 0)
@@ -2230,7 +2358,7 @@ public sealed class CampaignService
             completion.Panorama.CampaignId);
     }
 
-    private void QueueCrayburnQuestTurnIn(SessionContext context, CampaignQuestTurnInResult turnIn)
+    private void QueueCrayburnQuestTurnIn(SessionContext context, CampaignQuestTurnInResult turnIn, JsonObject rewards)
     {
         var questEnvelope = new JsonObject
         {
@@ -2241,7 +2369,7 @@ public sealed class CampaignService
             ["TemplateType"] = "QUEST",
             ["Transition"] = false,
             ["State"] = turnIn.Quest.State.DeepClone(),
-            ["Applied"] = CampaignStateFactory.EmptyAppliedUpdates(),
+            ["Applied"] = rewards,
             ["RequestType"] = "cmpupdate",
         };
         context.QueueMessageAfterResponse(new CampSysGeneral.Request
@@ -2320,7 +2448,7 @@ public sealed class CampaignService
     private JsonNode Forfeit(SessionContext context, JsonElement root)
     {
         var campaignId = ULong(root, "CampID");
-        if (!_store.TryGetByCampaignId(context.ProfileId, campaignId, out var record))
+        if (!TryGetOwnedCampaign(context.ProfileId, campaignId, out var record))
             return CampaignStateFactory.BuildFailure(campaignId, "Campaign not found");
         record.State["Finished"] = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
         record.State["FinishReason"] = "Forfeit";

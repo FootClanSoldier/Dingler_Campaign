@@ -19,7 +19,7 @@ public sealed class DeckImportOptions
 }
 
 /// <summary>
-/// Puts a deck from the Hex Codex deck builder into a player's account (owner's request, 2026-10-05). The client has no
+/// Imports a deck from the Hex Codex deck builder into a player's account. The client has no
 /// deck import, and reads decks only from the login profile stream, so an imported deck appears at the next login.
 /// Two ways in, one importer:
 ///   - chat: "/importdeck &lt;deck link or code&gt;" (the site's "Copy link"); equipment then set in the game's own editor;

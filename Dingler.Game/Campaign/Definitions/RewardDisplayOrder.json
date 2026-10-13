@@ -1,0 +1,15 @@
+{
+  "CardItemKinds": ["BOACARD", "CARD"],
+  "CardRarities": [
+    { "Rarity": "Legendary", "Priority": 700 },
+    { "Rarity": "Epic", "Priority": 600 },
+    { "Rarity": "Rare", "Priority": 500 },
+    { "Rarity": "Uncommon", "Priority": 400 },
+    { "Rarity": "Common", "Priority": 300 }
+  ],
+  "DefaultCardPriority": 250,
+  "Priorities": [
+    { "ItemKind": "GOLD", "Priority": 200 },
+    { "ItemKind": "XP", "Priority": 100 }
+  ]
+}

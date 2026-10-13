@@ -159,6 +159,42 @@ public static class CampaignAz1AuthoredCatalog
         return true;
     }
 
+    // The original client names this conversation set "Node R", while its
+    // authored map location and Unity prefab path use the ID "Node00R".
+    private const string ValeSceneId = "2f9a4008-a36b-4a49-805e-d61082c84c08";
+    private const string ValeStep1Id = "b00ba245-aa98-4765-b171-c33610e456d1";
+    private const string ValeStep2Id = "8433f72e-bd47-4978-bc02-360e34ddce57";
+    private const string ValeStep3Id = "617819c9-bc9b-4788-a469-8117af28a613";
+
+    public static bool TryGetValeOfOberon(out string step1, out string step2, out string step3)
+    {
+        step1 = step2 = step3 = string.Empty;
+        var manager = HexGame::Singleton<TemplateManager>.Instance;
+        var scenes = EnumerateManagerTemplates(manager, "Scene")
+            .Where(item => string.Equals(Text(Member(item, "m_Id", "Id")), ValeSceneId,
+                StringComparison.OrdinalIgnoreCase)
+                && Regex.IsMatch(Text(Member(item, "m_Name")),
+                    @"^AZ\s*1\s*-\s*NODE\s*R\s*-\s*MASKED\s+ARMY\s*-\s*DIALOG$", RegexOptions.IgnoreCase))
+            .Take(2).ToArray();
+        if (scenes.Length != 1)
+            return false;
+        var ids = new[] { ValeStep1Id, ValeStep2Id, ValeStep3Id };
+        var names = new[] { "Step 1", "Step 2 Player has faction quest", "Step 3 Player finished faction quest" };
+        for (var i = 0; i < ids.Length; i++)
+        {
+            if (!manager.ConversationTemplates.TryGetValue(new ResourceId(ids[i]), out var conversation)
+                || !Regex.IsMatch(conversation.m_Name ?? string.Empty,
+                    @"^AZ1\s*-\s*Node\s*R\s*-\s*Masked\s+Army\s*-", RegexOptions.IgnoreCase)
+                || !(conversation.m_Name ?? string.Empty).Contains(names[i], StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(conversation.m_OwnerName, "Masked Sergeant", StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+        step1 = ValeStep1Id;
+        step2 = ValeStep2Id;
+        step3 = ValeStep3Id;
+        return true;
+    }
+
     // Identifiers independently extracted from the original HEX gamedata:
     // SceneData EncounterScene and Node 9 ConversationTemplate, respectively.
     private const string SutherlandSceneId = "ddf8a2da-d397-4c3b-9d32-729f1bc86ade";

@@ -1,4 +1,4 @@
-﻿extern alias HexGame;
+extern alias HexGame;
 
 using HexGame::Game.Client.Network.Profile;
 using HexGame::Game.Shared;
@@ -8,7 +8,9 @@ using HexGame::Game.Shared.Network.Profile;
 using System.Text.Json;
 using Dingler.Server;
 using Dingler.Data.Repositories;
+using HexGame::Reckoning.Game;
 using Dingler.Game.Domain;
+using Dingler.Game.Campaign;
 using Deck = Dingler.Data.Entities.GameData.Deck;
 
 namespace Dingler.Game.Services
@@ -18,16 +20,119 @@ namespace Dingler.Game.Services
         private readonly DeckRepository _deckRepository;
         private readonly CollectionCacheService _collectionService;
         private readonly Dingler.Game.Arena.ArenaRunStore _arenaRunStore;
+        private readonly CampaignRunStore _campaignRunStore;
 
         // Contains "locked": the client then shows its own "deck is locked" message.
         private const string ArenaLockedMessage = "This deck is locked to the Frost Ring Arena until the run ends.";
 
         public DeckService(DeckRepository deckRepository, CollectionCacheService collectionService,
-            Dingler.Game.Arena.ArenaRunStore arenaRunStore)
+            Dingler.Game.Arena.ArenaRunStore arenaRunStore, CampaignRunStore campaignRunStore)
         {
             _deckRepository = deckRepository;
             _collectionService = collectionService;
             _arenaRunStore = arenaRunStore;
+            _campaignRunStore = campaignRunStore;
+        }
+
+        /// <summary>
+        /// Materialize the native race starter deck from HEX's authored DeckTemplate,
+        /// using owned collection instance IDs already exposed in the profile stream.
+        /// The saved database deck and returned AddChampion deck use the same ID.
+        /// </summary>
+        public async Task<deck_bits> CreateChampionStarterDeckAsync(
+            SessionContext context, ulong championId, string championName, ERace race)
+        {
+            var template = HexGame::Singleton<TemplateManager>.Instance.GetPvEStarterDeckForRace(race)
+                ?? throw new InvalidOperationException($"No native starter deck found for race {race}");
+
+            var deck = new deck_bits
+            {
+                PVEChampionId = championId,
+                PVPChampionId = ResourceId.Invalid,
+                player_id = context.ProfileId,
+                DeckName = $"{championName}({championId})",
+                equipment_1 = ResourceId.Invalid,
+                equipment_2 = ResourceId.Invalid,
+                equipment_3 = ResourceId.Invalid,
+                equipment_4 = ResourceId.Invalid,
+                equipment_5 = ResourceId.Invalid,
+                equipment_6 = ResourceId.Invalid,
+                talent_1 = ResourceId.Invalid,
+                talent_2 = ResourceId.Invalid,
+                talent_3 = ResourceId.Invalid,
+                talent_4 = ResourceId.Invalid,
+                talent_5 = ResourceId.Invalid,
+                Coin = ResourceId.Invalid,
+                deck_sleeve = ResourceId.Invalid,
+                gameboard = ResourceId.Invalid,
+            };
+
+            var byTemplate = _collectionService.CollectionIds
+                .GroupBy(static pair => pair.Value)
+                .ToDictionary(static group => group.Key, static group => group.Select(static pair => pair.Key).OrderBy(static id => id).ToArray());
+            var consumedByTemplate = new Dictionary<ResourceId, int>();
+            foreach (var stack in template.m_DeckResources)
+            {
+                consumedByTemplate.TryGetValue(stack.m_idTemplate, out var used);
+                if (!byTemplate.TryGetValue(stack.m_idTemplate, out var instances) ||
+                    instances.Length < used + stack.m_Count)
+                    throw new InvalidOperationException($"Starter deck card {stack.m_idTemplate} is unavailable in the profile collection");
+                for (var index = 0; index < stack.m_Count; index++)
+                {
+                    var id = instances[used + index];
+                    var gems = EGemTypesNew.Unknown;
+                    if (stack.m_GemTypesNewList is not null && stack.m_GemTypesNewList.Count > index)
+                    {
+                        foreach (var gem in stack.m_GemTypesNewList[index])
+                            gems = GemHelper.AddGemToGem(gem, gems);
+                        deck.ActiveGems[id] = gems;
+                    }
+                    deck.CardsInDeck.Add(new card_instance_bits
+                    {
+                        Id = id, TemplateID = stack.m_idTemplate, SocketedGems = gems,
+                    });
+                }
+                consumedByTemplate[stack.m_idTemplate] = used + stack.m_Count;
+            }
+
+            Deck? saved = null;
+            var cachedByThisCall = false;
+            try
+            {
+                saved = await _deckRepository.CreateDeckAsync(new Deck
+                {
+                    DeckName = deck.DeckName,
+                    DeckGuid = Guid.NewGuid(),
+                    ChampionGuid = ResourceId.Invalid.m_Guid,
+                    PlayerProfileId = context.ProfileId,
+                }).ConfigureAwait(false);
+                deck.Id = (ulong)saved.Id;
+                saved.DeckBitsJson = JsonSerializer.Serialize(new DinglerDeckBits(deck));
+                await _deckRepository.UpdateDeckAsync(saved).ConfigureAwait(false);
+                cachedByThisCall = context.Decks.TryAdd(deck.Id, deck);
+                if (!cachedByThisCall)
+                    throw new InvalidOperationException("New starter deck ID already exists in session");
+                return deck;
+            }
+            catch
+            {
+                if (saved is not null)
+                {
+                    if (cachedByThisCall)
+                        context.Decks.Remove((ulong)saved.Id, out _);
+                    await _deckRepository.RemoveDeckAsync(saved.Id).ConfigureAwait(false);
+                }
+                throw;
+            }
+        }
+
+        public async Task DiscardChampionStarterDeckAsync(SessionContext context, ulong deckId)
+        {
+            if (context.Decks.TryGetValue(deckId, out var deck) && deck.PVEChampionId != 0)
+            {
+                context.Decks.Remove(deckId, out _);
+                await _deckRepository.RemoveDeckAsync(checked((int)deckId)).ConfigureAwait(false);
+            }
         }
 
         public async Task<List<Deck>> GetPlayerDecksAsync(ulong playerProfileId)
@@ -42,6 +147,15 @@ namespace Dingler.Game.Services
         public async Task<AddNewDeckResponse> AddNewDeck(SessionContext context, AddNewDeckRequestArgs args)
         {
             var playerId = context.ProfileId;
+            if (!TryResolvePveChampionId(context.ProfileId, args.PvEChampionId.GetInstanceId(),
+                    out var championId))
+            {
+                Dingler.Game.Protocol.StaticLogger.LogWarning(
+                    "Campaign: rejected PvE deck create for profile {profile} and champion UID instance {champion}",
+                    context.ProfileId, args.PvEChampionId.GetInstanceId());
+                return new AddNewDeckResponse { Error = EAddNewDeckError.InternalServerError,
+                    ErrorMessage = "Campaign champion is not owned by this profile" };
+            }
 
             // Saving a new deck under an existing name replaces (deletes) the old one: never the arena's deck.
             if (context.Decks.Values.Any(d => string.Equals(d.DeckName, args.DeckName, StringComparison.OrdinalIgnoreCase) &&
@@ -67,7 +181,7 @@ namespace Dingler.Game.Services
 
             var addedDeck = await _deckRepository.CreateDeckAsync(newDeck).ConfigureAwait(false);
 
-            var deckbitsString = CreateDeckBitsStringForNewDeck(addedDeck.Id, args);
+            var deckbitsString = CreateDeckBitsStringForNewDeck(addedDeck.Id, args, championId);
 
             addedDeck.DeckBitsJson = deckbitsString;
 
@@ -136,6 +250,16 @@ namespace Dingler.Game.Services
         public async Task<UpdateDeckResponse> UpdateDeckAsync(SessionContext context, UpdateDeckRequestArgs args)
         {
             var deckId = args.DeckID.GetInstanceId();
+            if (!TryResolvePveChampionId(context.ProfileId, args.PvEChampionId.GetInstanceId(),
+                    out var championId))
+            {
+                Dingler.Game.Protocol.StaticLogger.LogWarning(
+                    "Campaign: rejected PvE deck update for profile {profile} and champion UID instance {champion}",
+                    context.ProfileId, args.PvEChampionId.GetInstanceId());
+                return new UpdateDeckResponse { DeckID = args.DeckID,
+                    Error = EUpdateDeckError.InternalServerError,
+                    ErrorMessage = "Campaign champion is not owned by this profile" };
+            }
 
             if (_arenaRunStore.IsDeckInRun(context.ProfileId, deckId))
             {
@@ -153,6 +277,9 @@ namespace Dingler.Game.Services
             }
 
             var deck = await _deckRepository.GetDeckById((int)deckId).ConfigureAwait(false);
+
+            if (deck is not null && deck.PlayerProfileId != context.ProfileId)
+                throw new InvalidOperationException("Deck belongs to another profile");
 
             if (deck is null)
             {
@@ -189,7 +316,7 @@ namespace Dingler.Game.Services
             deckBits.talent_4 = args.TalentIDs.Count >= 4 ? args.TalentIDs[3] : ResourceId.Invalid;
             deckBits.talent_5 = args.TalentIDs.Count >= 5 ? args.TalentIDs[4] : ResourceId.Invalid;
             deckBits.Personality = args.Persona;
-            deckBits.PVEChampionId = args.PvEChampionId.GetInstanceId();
+            deckBits.PVEChampionId = championId;
             deckBits.PVPChampionId = args.PvPChampionId;
 
             deckBits.CardsInDeck.Clear();
@@ -270,6 +397,10 @@ namespace Dingler.Game.Services
                 };
             }
 
+            var owned = userProfile.Decks.ContainsKey(deckId)
+                && (await _deckRepository.GetDeckById(checked((int)deckId)).ConfigureAwait(false))?.PlayerProfileId == userProfile.ProfileId;
+            if (!owned)
+                throw new InvalidOperationException("Deck does not belong to this profile");
             var removeTask = _deckRepository.RemoveDeckAsync((int)deckId);
 
             userProfile.Decks.Remove(deckId, out _);
@@ -284,12 +415,26 @@ namespace Dingler.Game.Services
             };
         }
 
-        private string CreateDeckBitsStringForNewDeck(int id, AddNewDeckRequestArgs args)
+        private bool TryResolvePveChampionId(ulong profileId, ulong candidate, out ulong championId)
+        {
+            if (candidate == 0)
+            {
+                championId = 0; // Non-campaign decks have no PvE champion.
+                return true;
+            }
+
+            var owned = _campaignRunStore.TryGetOwnedChampion(
+                profileId, candidate, out _);
+            championId = owned ? candidate : 0;
+            return owned;
+        }
+
+        private string CreateDeckBitsStringForNewDeck(int id, AddNewDeckRequestArgs args, ulong championId)
         {
             var deckBits = new DinglerDeckBits()
             {
                 Id = (ulong)id,
-                PVEChampionId = args.PvEChampionId.GetInstanceId(),
+                PVEChampionId = championId,
                 PVPChampionId = args.PvPChampionId,
                 ActiveGems = args.ActiveGems,
                 Coin = args.CoinId,

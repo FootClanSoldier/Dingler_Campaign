@@ -41,6 +41,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Campaign/Definitions/EncounterRewards.json" LogicalName="Dingler.Game.Campaign.Definitions.EncounterRewards.json" />
+    <EmbeddedResource Include="Campaign/Definitions/QuestRewards.json" LogicalName="Dingler.Game.Campaign.Definitions.QuestRewards.json" />
+    <EmbeddedResource Include="Campaign/Definitions/RewardDisplayOrder.json" LogicalName="Dingler.Game.Campaign.Definitions.RewardDisplayOrder.json" />
     <EmbeddedResource Include="Campaign/Definitions/Az1Map.json" LogicalName="Dingler.Game.Campaign.Definitions.Az1Map.json" />
   </ItemGroup>
 

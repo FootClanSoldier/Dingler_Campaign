@@ -1,8 +1,7 @@
 ﻿namespace Dingler.Game.Campaign;
 
 /// <summary>
-/// Client-authored AZ0 starter-panorama identities recovered from HEX data/client behavior.
-/// Keeping them data-like here makes it easy to move them to extracted metadata later.
+/// AZ0 starter-panorama identities extracted from the original HEX client.
 /// </summary>
 public sealed record CampaignRaceConfig(
     int Race,

@@ -25,6 +25,7 @@ namespace Dingler.Game.Services
         public Dictionary<ulong, ResourceId> CollectionIds { get; set; } = new();
         private readonly List<card_instance_bits> _baseCardInstances = new();
         private readonly Dictionary<(int Race, string Choice), ulong> _shroomRewardIds = new();
+        private readonly Dictionary<(int Race, string Encounter, string RuleId, string Template), ulong> _captureRewardIds = new();
 
         private readonly Dingler.Game.Arena.ArenaRunStore? _arenaRunStore;
         private readonly CampaignOptions? _campaignOptions;
@@ -108,8 +109,8 @@ namespace Dingler.Game.Services
             }
 
             _baseCardInstances.AddRange(cardList);
-            // Reserve deterministic instance IDs for each bootstrap champion's
-            // possible reward. Ownership is still per-profile and per-choice.
+            // Reserve stable card instance IDs for each race and possible Shroom reward.
+            // Ownership is still per-profile and per-choice.
             foreach (var race in Enumerable.Range(1, 8))
             {
                 foreach (var choice in CampaignShroomRewardCatalog.ChoiceIds)
@@ -117,6 +118,34 @@ namespace Dingler.Game.Services
                     var id = (ulong)CollectionIds.Count + 1;
                     _shroomRewardIds.Add((race, choice), id);
                     CollectionIds.Add(id, new ResourceId(choice));
+                }
+            }
+
+            // Each CapturedCard grant reserves a stable slot from the reward
+            // catalog. Slots 0 and 1 preserve existing Tamed reward instance
+            // IDs; adding another rule never shifts previously issued IDs.
+            foreach (var capture in CampaignRewardCatalog.CaptureRewards)
+            {
+                var templates = capture.TemplateGuids
+                    .Where(guid => manager.Cards.ContainsKey(new ResourceId(guid)))
+                    .OrderBy(static guid => guid, StringComparer.Ordinal)
+                    .ToArray();
+                if (templates.Length > 20)
+                    throw new InvalidDataException($"Too many capture templates for {capture.EncounterGuid}:{capture.RuleId}");
+                for (var race = 1; race <= 8; race++)
+                {
+                    for (var i = 0; i < templates.Length; i++)
+                    {
+                        var slot = capture.CollectionSlot;
+                        var id = slot < 5
+                            ? 1_000_000UL + (ulong)race * 100UL + (ulong)slot * 20UL + (ulong)i
+                            : 10_000_000UL + (ulong)(race - 1) * 1_000_000UL
+                                + (ulong)(slot - 5) * 20UL + (ulong)i;
+                        var template = templates[i];
+                        _captureRewardIds.Add((race, capture.EncounterGuid.ToLowerInvariant(),
+                            capture.RuleId.ToLowerInvariant(), template), id);
+                        CollectionIds.Add(id, new ResourceId(template));
+                    }
                 }
             }
 
@@ -131,18 +160,27 @@ namespace Dingler.Game.Services
         public bool TryGetShroomRewardInstanceId(int race, string choice, out ulong instanceId) =>
             _shroomRewardIds.TryGetValue((race, choice.ToLowerInvariant()), out instanceId);
 
+        public bool TryGetCaptureRewardInstanceId(int race, string encounter, string ruleId, string template, out ulong instanceId) =>
+            _captureRewardIds.TryGetValue((race, encounter.ToLowerInvariant(), ruleId.ToLowerInvariant(), template.ToLowerInvariant()), out instanceId);
+
         private byte[] ProfileCardCollection(ulong profileId)
         {
             if (_campaignRunStore is null)
                 return Cards;
             var earned = _campaignRunStore.GetProfileShroomRewards(profileId);
-            if (earned.Count == 0)
+            var captures = _campaignRunStore.GetProfileCaptureRewards(profileId);
+            if (earned.Count == 0 && captures.Count == 0)
                 return Cards;
             var cards = new List<card_instance_bits>(_baseCardInstances);
             foreach (var (race, choice) in earned)
             {
                 if (TryGetShroomRewardInstanceId(race, choice, out var id))
                     cards.Add(new card_instance_bits { Id = id, TemplateID = new ResourceId(choice) });
+            }
+            foreach (var (race, encounter, ruleId, template) in captures)
+            {
+                if (TryGetCaptureRewardInstanceId(race, encounter, ruleId, template, out var id))
+                    cards.Add(new card_instance_bits { Id = id, TemplateID = new ResourceId(template) });
             }
             return EncData.Encode(new card_collection { Cards = cards });
         }
@@ -164,12 +202,14 @@ namespace Dingler.Game.Services
 
             List<champion_bits> campaignChampions = new();
             var campaignRuns = new List<CampaignRunRecord>();
-            if (_campaignOptions?.BootstrapChampion == true && _campaignRunStore is not null)
+            var ownedChampions = _campaignRunStore?.GetCreatedChampions(profileId).ToList()
+                ?? new List<CampaignChampionRun>();
+            if (_campaignRunStore is not null)
             {
-                for (var race = 1; race <= 8; race++)
+                foreach (var hero in ownedChampions.Where(static item => item.IsPlayerCreated))
                 {
-                    var championId = CampaignBootstrapChampion.ChampionId(profileId, race);
-                    campaignRuns.Add(_campaignRunStore.GetOrCreate(profileId, championId, race));
+                    if (_campaignRunStore.TryGet(profileId, hero.ChampionId, out var current))
+                        campaignRuns.Add(current);
                 }
             }
 
@@ -177,12 +217,13 @@ namespace Dingler.Game.Services
             {
                 // TODO: Temporary solution for Gaal Camp. The original HEX
                 // dialogue requires 100 Gold before emitting gaal_camp_accept.
-                // Show a development-only client prerequisite balance for PvE
-                // bootstrap profiles until persistent currency/debit exists.
+                // Show the same development-only prerequisite Gold at login,
+                // including before the first champion is created, until real
+                // currency/debit persistence exists.
                 // The original HasCurrency check uses > rather than >=, so
                 // a displayed 100 Gold did not satisfy the 100 Gold requirement.
                 // This is NOT an owned or spendable server-side Gold balance.
-                Gold = _campaignOptions?.BootstrapChampion == true ? 1000 : 0,
+                Gold = _campaignOptions is not null ? 1000 : 0,
                 Platinum = 0,
                 Name = context.UserName,
                 Champions = campaignChampions,
@@ -224,7 +265,7 @@ namespace Dingler.Game.Services
                 Debug.WriteLine(ex.Message);
             }
 
-            if (_campaignOptions?.BootstrapChampion == true && _campaignRunStore is not null)
+            if (_campaignRunStore is not null)
             {
                 foreach (var originalRun in campaignRuns)
                 {
@@ -260,13 +301,15 @@ namespace Dingler.Game.Services
                             campaignRun.CampaignType, stateTempType);
                     }
 
-                    var bootstrapChampion = CampaignBootstrapChampion.Create(
-                        profileId, _campaignOptions, campaignRun.Race, campaignRun.CampaignId, lastDeckId, campaignRun.ChampionTalents);
-                    campaignChampions.Add(bootstrapChampion);
+                    var savedHero = ownedChampions.FirstOrDefault(hero => hero.ChampionId == campaignRun.ChampionId);
+                    if (savedHero is null)
+                        continue;
+                    var champion = CampaignChampionProjection.CreateFromSaved(savedHero);
+                    campaignChampions.Add(champion);
 
                     Dingler.Game.Protocol.StaticLogger.LogInformation(
                         "Campaign profile: user {user} champion={champion} race={race} LastCampaignID={campaign} LastDeckID={deck} talents={talents} verifiedCurrent={verified}",
-                        context.UserName ?? "<unknown>", bootstrapChampion.Id, campaignRun.Race, bootstrapChampion.LastCampaignID, bootstrapChampion.LastDeckID,
+                        context.UserName ?? "<unknown>", champion.Id, campaignRun.Race, champion.LastCampaignID, champion.LastDeckID,
                         campaignRun.ChampionTalents.Count, isCurrentCampaignConsistent);
                 }
             }

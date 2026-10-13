@@ -26,8 +26,10 @@ public sealed class AddNewDeckAsyncRequestHandler : IAsyncRequestHandler<AddNewD
 		{
 			return await _deckService.AddNewDeck(context, request);
 		}
-		catch (Exception)
+		catch (Exception ex)
 		{
+            Dingler.Game.Protocol.StaticLogger.LogError(
+                ex, "Deck creation request failed for an authenticated profile.");
 			return new AddNewDeckResponse()
 			{
 				Error = EAddNewDeckError.InternalServerError,

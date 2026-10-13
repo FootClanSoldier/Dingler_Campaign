@@ -547,6 +547,35 @@ public static class CampaignStateFactory
     }
 
     /// <summary>
+    /// Project the Masked Sergeant conversation authored for Node R/Node00R.
+    /// Quest ownership and completion are resolved by the run store; visiting
+    /// Vale neither grants that faction quest nor opens its bridge/side paths.
+    /// </summary>
+    public static bool PrepareAz1ValeOfOberon(JsonObject state, string step1, string step2,
+        string step3, bool hasFactionQuest, bool factionQuestFinished)
+    {
+        var vale = FindAz1Location(state, CampaignAz1Config.ValeNode);
+        var gaal = FindAz1Location(state, CampaignAz1Config.OaksNode);
+        if (vale is null || gaal is null)
+            return false;
+
+        var visits = vale["vale_visits"]?.GetValue<int>() ?? 0;
+        var completed = vale["completed"]?.GetValue<bool>() == true;
+        var available = gaal["enabled"]?.GetValue<bool>() == true
+            && (gaal["gaal_visits"]?.GetValue<int>() ?? 0) > 0;
+        var selected = !hasFactionQuest ? step1 : factionQuestFinished ? step3 : step2;
+        var changed = false;
+        changed |= SetValue(vale, "visible", JsonValue.Create(available));
+        changed |= SetValue(vale, "enabled", JsonValue.Create(available));
+        changed |= SetValue(vale, "type", JsonValue.Create(completed ? "None" : "Convo"));
+        changed |= SetValue(vale, "conversationId", completed ? null : JsonValue.Create(selected));
+        changed |= SetValue(vale, "encounter", null);
+        changed |= SetValue(vale, "autostart", JsonValue.Create(available && !completed && visits == 0));
+        changed |= SetValue(vale, "repeatable", JsonValue.Create(!completed && visits > 0));
+        return changed;
+    }
+
+    /// <summary>
     /// The first completed Milosh conversation opens the authored path to
     /// the Cockatwice Chick encounter. Its opening dialogue is independent
     /// from optional Fortune payment. A won battle remains retryable until the
@@ -608,6 +637,8 @@ public static class CampaignStateFactory
                 permitted &= FindAz1Location(state, CampaignAz1Config.NextNode)?["completed"]?.GetValue<bool>() == true;
             if (path.Id is CampaignAz1Config.DunnwoodToHollow or CampaignAz1Config.DunnwoodToOaks)
                 permitted &= HasWonAz1Bear(state);
+            if (path.Id == CampaignAz1Config.OaksToVale)
+                permitted &= (FindAz1Location(state, CampaignAz1Config.OaksNode)?["gaal_visits"]?.GetValue<int>() ?? 0) > 0;
             if (path.Id == CampaignAz1Config.OaksToSutherland)
                 permitted &= (FindAz1Location(state, CampaignAz1Config.OaksNode)?["gaal_visits"]?.GetValue<int>() ?? 0) > 0;
 

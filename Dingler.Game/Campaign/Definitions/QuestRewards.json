@@ -1,0 +1,92 @@
+{
+  "Entries": [
+    {
+      "Quest": "az01_q_dwarf_crayburn",
+      "Campaign": "Crayburn",
+      "Rewards": [
+        {
+          "Id": "completed",
+          "Trigger": "QuestCompleted",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Quest": "az01_tamed",
+      "Campaign": "AZ1",
+      "Rewards": [
+        {
+          "Id": "completed",
+          "Trigger": "QuestCompleted",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Quest": "az01_ar_find_ambling_mesa",
+      "Campaign": "AZ1",
+      "Rewards": [
+        {
+          "Id": "completed",
+          "Trigger": "QuestCompleted",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Quest": "az01_uw_find_cave_in",
+      "Campaign": "AZ1",
+      "Rewards": [
+        {
+          "Id": "completed",
+          "Trigger": "QuestCompleted",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

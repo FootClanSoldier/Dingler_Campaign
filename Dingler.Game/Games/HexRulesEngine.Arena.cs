@@ -1,4 +1,4 @@
-﻿extern alias HexGame;
+extern alias HexGame;
 using System.Reflection;
 using Dingler.Game.Arena.Ai;
 using Dingler.Game.Cards;
@@ -13,8 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Dingler.Game.Games;
 
-// Frost Ring Arena: the parts of the rules engine an arena battle (session flag 128) needs. The recipe was proven
-// offline in the research repo (docs/05, 200 of 200 battles); the AI seat follows docs/02 §7 (400 of 400 games).
+// Frost Ring Arena rules-engine hooks for arena sessions (flag 128), using the original HEX AI.
 public sealed partial class HexRulesEngine
 {
 	// ---------- battle mods (GetArenaBattleMods, 10029) ----------
@@ -115,7 +114,7 @@ public sealed partial class HexRulesEngine
 	// ---------- the AI's view of the board: rebuilt live before each delivery ----------
 
 	/// <summary>Player, card and combat state as the AI seat sees it now. Dingler's incremental updates were written for
-	/// human clients (stale resources, skipped zone moves), so the AI never uses them. Two fixes from docs/02 §7: hidden
+	/// human clients (stale resources, skipped zone moves), so the AI never uses them. For correct AI visibility, hidden
 	/// cards the AI is offered come face up (RevealNow), and every card carries its real zone and AbleToBlock.</summary>
 	internal List<SessionEventArgs> BuildAiSync(ArenaAiSeat seat)
 	{
@@ -148,12 +147,12 @@ public sealed partial class HexRulesEngine
 
 		// A combat whose attacker died stays in the engine with no attacker (Session.PruneDeadCombats skips it); listed, it
 		// reaches the AI as attacker Card.0, which its combat evaluator can't look up (AICardEvaluator.GetCombatValue,
-		// AITactical.AIHandleAttackDefensePriorityWindow), so the AI threw and passed. Offline: 11 of 200 games -> 0.
+		// AITactical.AIHandleAttackDefensePriorityWindow), so the AI throws and passes.
 		seat.AddIfChanged("L", CombatListingFor(seat.Player, CombatManager.GetAllCombatAttacks().Where(c => c.Attacker != null).ToList()), events);
 		return events;
 	}
 
-	// ---------- the AI's legal moves (ported from the research harness, which ran 600 games) ----------
+	// Build the AI's legal moves.
 	// Dingler's GameOptionService was written for human clients and differs in ways the AI notices (empty target
 	// lists for choosing-zone cards, no forced-block minimum, no PlayForFree), so the AI seat gets its own builder.
 
@@ -333,8 +332,8 @@ public sealed partial class HexRulesEngine
 		}
 	}
 
-	// The AI values every card it is offered as a target or cost and crashed on cards it had only seen face down
-	// (docs/02 §7.3 cause A). Show the chooser, and only the chooser, those cards face up in the next sync.
+	// The AI values every card it is offered as a target or cost and crashed on cards it had only seen face down.
+	// Show the chooser, and only the chooser, those cards face up in the next sync.
 	private void AiRevealOffered(Player player, PlayerOptionListSessionEventArgs list)
 	{
 		var ids = new HashSet<string>();
@@ -360,7 +359,7 @@ public sealed partial class HexRulesEngine
 		return match.Success ? match.Groups[1].Value : text;
 	}
 
-	// ---------- fixes to the AI's moves (docs/02 §7.3) ----------
+	// ---------- the AI's moves ----------
 
 	private readonly Random _aiRng = new();
 

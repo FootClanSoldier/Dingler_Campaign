@@ -3,8 +3,7 @@ namespace Dingler.Game.Campaign;
 /// <summary>
 /// Authored Crayburn identities used by the AZ0 quest handoff. QuestTemplate
 /// identity/objectives come from the original HEX TemplateManager runtime; castle
-/// node conversations and encounter scenes follow client-data-derived mappings
-/// recorded in docs/Research/AZ0_Quest_Crayburn_Handoff.txt.
+/// node conversations and encounter scenes follow the authored client-data mappings.
 /// </summary>
 public static class CampaignCrayburnConfig
 {

@@ -8,9 +8,9 @@ using HexGame::Reckoning.Game;
 namespace Dingler.Game.Arena;
 
 /// <summary>
-/// Hogarth's 21 in-battle challenges (design 03 D3-A) and the 4 buffs, as battle mods. Which mods the original server used
-/// is not in the client; each row is rebuilt from the challenge's objective text and the game data, and every row was run
-/// offline first (research repo, spikes/ai-vs-ai "arena challenges"). Engine rules behind the table:
+/// Hogarth's 21 in-battle challenges and four buffs, represented as battle mods.
+/// Their server-side configurations are not present in the client data.
+/// Each row maps a challenge objective to original HEX encounter modifications:
 /// "starts with X in play" = AddCard into the Warzone; an action the opponent "played" = AddCard into CastSpells (cast for
 /// free, through the chain); RunAbilities only runs chain-ignoring abilities (the two "Arena Challenge" cards are built for
 /// it); the challenge conversation sits on exactly one round-0 mod; mods are single-use, so every battle gets fresh ones.

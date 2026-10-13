@@ -31,4 +31,8 @@ public sealed class CampaignRunRecord
     public List<string> ChampionTalents { get; set; } = new();
 
     public JsonObject State { get; set; } = new();
+
+    // Durable one-time receipt keys (encounter GUID + rule ID or quest + rule ID). Capture
+    // receipts store the original captured template GUID for profile collection sync.
+    public Dictionary<string, string> RewardClaims { get; set; } = new();
 }

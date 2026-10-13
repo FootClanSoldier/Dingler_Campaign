@@ -1,0 +1,829 @@
+{
+  "Entries": [
+    {
+      "EncounterGuid": "5227b1b0-193a-45e8-a1a3-8215f20ac95b",
+      "Campaign": "AZ0",
+      "Node": "Race1:Training",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "5919c63a-38f6-487a-9d66-3b13cb12a520",
+      "Campaign": "Crayburn",
+      "Node": "Race1:CastleGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "be2c5dd9-6cb5-4cf8-a1ef-f050079b1130",
+      "Campaign": "Crayburn",
+      "Node": "Race1:TowerGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "61ae67b4-1691-4b1f-903c-687c396256a9",
+      "Campaign": "Crayburn",
+      "Node": "Race1:PenworthTower",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "e5cd349e-a77d-4175-8cfc-3565395c2eb4",
+      "Campaign": "AZ0",
+      "Node": "Race2:Training",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "f25f20b1-3cb3-4066-ae91-1c557f0928c2",
+      "Campaign": "Crayburn",
+      "Node": "Race2:CastleGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "31d6b2aa-bdf1-47ea-a0a5-a62bacdb75fa",
+      "Campaign": "Crayburn",
+      "Node": "Race2:TowerGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "a5b0cfd3-c85e-4c8f-a4ae-172179ae1450",
+      "Campaign": "Crayburn",
+      "Node": "Race2:PenworthTower",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "064d32cd-9171-4052-82a2-869eb0017b2a",
+      "Campaign": "AZ0",
+      "Node": "Race3:Training",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "f3c0ac5b-ff09-488c-ad63-f11ff15acdcd",
+      "Campaign": "Crayburn",
+      "Node": "Race3:CastleGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "2ba61b7b-6864-4582-a634-f9124fb2fdee",
+      "Campaign": "Crayburn",
+      "Node": "Race3:TowerGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "5f222319-7b4e-4ba4-b0dc-f9678c000d8b",
+      "Campaign": "Crayburn",
+      "Node": "Race3:PenworthTower",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "84cdd061-93ec-4126-a2f6-530ac5217c96",
+      "Campaign": "AZ0",
+      "Node": "Race4:Training",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "e288f879-5860-4d29-9c2d-7977ff03f0f6",
+      "Campaign": "Crayburn",
+      "Node": "Race4:CastleGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "b07c8713-b294-46cd-93e4-d067e36f51a7",
+      "Campaign": "Crayburn",
+      "Node": "Race4:TowerGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "6355ca3d-1bab-4251-896c-b82e8877a2f4",
+      "Campaign": "Crayburn",
+      "Node": "Race4:PenworthTower",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "de641801-55a2-4df8-b298-d2e91c21718d",
+      "Campaign": "AZ0",
+      "Node": "Race5:Training",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "96225626-52ef-4d18-8972-60200d2042e5",
+      "Campaign": "Crayburn",
+      "Node": "Race5:CastleGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "8188e093-047c-40d5-ae06-fb99d54530d4",
+      "Campaign": "Crayburn",
+      "Node": "Race5:TowerGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "d796541f-c6c8-4e4f-8313-10ba37f1814b",
+      "Campaign": "Crayburn",
+      "Node": "Race5:PenworthTower",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "510ed850-5a3e-437b-875e-7834cacd1865",
+      "Campaign": "AZ0",
+      "Node": "Race6:Training",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "ed4ff0de-ce9a-4a50-b256-4cdca572e792",
+      "Campaign": "Crayburn",
+      "Node": "Race6:CastleGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "c5cbbc95-a4ba-461e-9d42-1c592f120b1a",
+      "Campaign": "Crayburn",
+      "Node": "Race6:TowerGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "1f29a2cc-ec2d-438b-9c46-296d8d8bf9ec",
+      "Campaign": "Crayburn",
+      "Node": "Race6:PenworthTower",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "f56ba80f-af31-4d75-a4bc-640f899ddd32",
+      "Campaign": "AZ0",
+      "Node": "Race7:Training",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "98158279-f641-48c1-8439-f1688ef09a9d",
+      "Campaign": "Crayburn",
+      "Node": "Race7:CastleGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "8afdb8ac-d155-4c63-9a73-623f16075ab8",
+      "Campaign": "Crayburn",
+      "Node": "Race7:TowerGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "3c1d4212-f5df-4efa-bfa7-b6b1e51e68b7",
+      "Campaign": "Crayburn",
+      "Node": "Race7:PenworthTower",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "7b9a5a0d-727f-4df8-923f-1e5a5b24c522",
+      "Campaign": "AZ0",
+      "Node": "Race8:Training",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "69c451b9-4e02-4c66-8943-f0b4769d90d4",
+      "Campaign": "Crayburn",
+      "Node": "Race8:CastleGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "a2c5cef6-f76f-46a8-afa0-82558e6ebf46",
+      "Campaign": "Crayburn",
+      "Node": "Race8:TowerGate",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "607b221d-dbe7-4fe7-8d4f-c7b9774fb187",
+      "Campaign": "Crayburn",
+      "Node": "Race8:PenworthTower",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "150b0ed9-a5e0-4729-81d8-764fa237c4e4",
+      "Campaign": "AZ1",
+      "Node": "Node003",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "OriginalVideo",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 100
+            },
+            {
+              "Type": "Gold",
+              "Amount": 150
+            }
+          ]
+        },
+        {
+          "Id": "capture",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "OriginalVideo",
+          "Conditions": {
+            "Type": "TamedCard",
+            "TemplateGuid": "c0bb008e-17c5-4e73-baf9-5cbd8f3eb6dc"
+          },
+          "Grants": [
+            {
+              "Type": "CapturedCard",
+              "Quantity": 1,
+              "CollectionSlot": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "EncounterGuid": "ddf8a2da-d397-4c3b-9d32-729f1bc86ade",
+      "Campaign": "AZ1",
+      "Node": "Node009",
+      "Rewards": [
+        {
+          "Id": "victory",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Grants": [
+            {
+              "Type": "XP",
+              "Amount": 1
+            },
+            {
+              "Type": "Gold",
+              "Amount": 1
+            }
+          ]
+        },
+        {
+          "Id": "capture",
+          "Trigger": "Victory",
+          "ClaimPolicy": "OncePerCampaign",
+          "Evidence": "Provisional",
+          "Conditions": {
+            "Operator": "Any",
+            "Items": [
+              {
+                "Type": "TamedCard",
+                "TemplateGuid": "8d46a996-b371-460e-97a0-3eeb37f07ce3"
+              },
+              {
+                "Type": "TamedCard",
+                "TemplateGuid": "ddb809e9-92f1-471f-b0d2-0e1584acc1c1"
+              }
+            ]
+          },
+          "Grants": [
+            {
+              "Type": "CapturedCard",
+              "Quantity": 1,
+              "CollectionSlot": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

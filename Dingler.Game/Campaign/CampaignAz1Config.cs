@@ -23,6 +23,9 @@ public static class CampaignAz1Config
     public const string SutherlandNode = "Node009";
     public const string SutherlandTitle = "The Sutherland";
     public const string OaksToSutherland = "Path_Node007_Node009";
+    public const string ValeNode = "Node00R";
+    public const string ValeTitle = "Vale of Oberon";
+    public const string OaksToVale = "Path_Node007_Node00R";
     public const string DunnwoodToHollow = "Path_Node003_Node004";
     public const string DunnwoodToOaks = "Path_Node003_Node007";
     public const string OpeningPath = "Path_Node001_Node002";
@@ -36,6 +39,7 @@ public static class CampaignAz1Config
         FourthNode or FourthTitle => FourthNode,
         OaksNode or OaksTitle => OaksNode,
         SutherlandNode or SutherlandTitle => SutherlandNode,
+        ValeNode or ValeTitle => ValeNode,
         _ => null,
     };
 
@@ -50,6 +54,7 @@ public static class CampaignAz1Config
         new(DunnwoodToHollow, ThirdNode, FourthNode),
         new(DunnwoodToOaks, ThirdNode, OaksNode),
         new(OaksToSutherland, OaksNode, SutherlandNode),
+        new(OaksToVale, OaksNode, ValeNode),
     ];
 
     public static bool TryGetOpeningEdge(string? path, out MapEdge edge)
