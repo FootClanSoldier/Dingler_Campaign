@@ -1,4 +1,5 @@
-﻿using Dingler.Server;
+﻿using Dingler.Game.Tournaments;
+using Dingler.Server;
 using Spectre.Console;
 
 namespace Dingler.Terminal.Frontend
@@ -29,7 +30,7 @@ namespace Dingler.Terminal.Frontend
                 var choices = new List<string>();
 
                 choices.AddRange(_manager.IsServerRunning
-                    ? new string[] { Choices.IsRunning.STOP_SERVER, Choices.IsRunning.COLLECT_GARBAGE }
+                    ? new string[] { Choices.IsRunning.STOP_SERVER, Choices.IsRunning.COLLECT_GARBAGE, Choices.IsRunning.SEED_DRAFT_BOTS }
                     : new string[] { Choices.IsNotRunning.START_SERVER });
 
                 choices.Add(Choices.EXIT);
@@ -55,11 +56,30 @@ namespace Dingler.Terminal.Frontend
                         GC.Collect();
                         GC.Collect(2, GCCollectionMode.Forced, true);
                         break;
+                    case Choices.IsRunning.SEED_DRAFT_BOTS:
+                        await SeedDraftBotsAsync();
+                        break;
                     case Choices.EXIT:
                         await _manager.StopServerAsync().ConfigureAwait(false);
                         return;
                 }
             }
+        }
+
+        private async Task SeedDraftBotsAsync()
+        {
+            var tournamentManager = _manager.GetServerService<TournamentManager>();
+            if (tournamentManager is null)
+            {
+                AnsiConsole.MarkupLine("[red]Tournament manager is not available (server stopped?).[/]");
+            }
+            else
+            {
+                await tournamentManager.SeedDraftBotsAsync(7);
+                AnsiConsole.MarkupLine("[green]Registered 7 draft bots.[/]");
+            }
+
+            await Task.Delay(1000);
         }
 
         private void DisplayHeader()

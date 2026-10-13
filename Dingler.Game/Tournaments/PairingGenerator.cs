@@ -38,7 +38,7 @@ public static class PairingGenerator
 	{
 		var pairings = new List<TournamentPairing>();
 		var unpaired = players
-			.Where(p => p.EliminationReason != ETournamentPlayerEliminationReason.TPE_NotEliminated)
+			.Where(p => p.EliminationReason == ETournamentPlayerEliminationReason.TPE_NotEliminated)
 			.OrderByDescending(p => p.Points)
 			.ThenByDescending(p => p.Wins)
 			.ThenBy(p => p.Losses)
@@ -60,18 +60,4 @@ public static class PairingGenerator
 
 		return pairings;
 	}
-
-	/*private static int FindBestOpponent(TournamentPlayerInfo player, List<TournamentPlayerInfo> pool)
-	{
-		for (var i = 1; i < pool.Count; i++)
-		{
-			if (pool[i].OpponentIds.Contains(player.PlayerID))
-				continue;
-
-			return i;
-		}
-
-		return -1;
-	}
-	*/
 }

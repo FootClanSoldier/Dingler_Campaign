@@ -50,6 +50,16 @@ public static class CardExtensions
 			representation.DamageShield = card.HasDamageShield;
 			representation.Defense = card.CurrentHealthValue;
 
+			foreach (var kvp in card.m_PerGameUses)
+			{
+				representation.UsesPerGameCounts[kvp.Key] = kvp.Value;
+			}
+
+			foreach (var kvp in card.m_Cooldowns)
+			{
+				representation.CooldownCounts[kvp.Key] = kvp.Value;
+			}
+
 			foreach (var kvp in card.CardIntegerVariables)
 			{
 				representation.IntegerVariables.Add(kvp.Key, kvp.Value);

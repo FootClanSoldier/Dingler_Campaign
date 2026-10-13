@@ -112,7 +112,8 @@ namespace Dingler.Game.CompositionRoot
                     .AddScoped<GameManager>()
                     .AddScoped<SessionManager>()
                     .AddScoped<IStreamHandler, HexStreamHandler>()
-                    .AddScoped<TournamentRepository>();
+                    .AddScoped<TournamentRepository>()
+                    .AddScoped<DraftCollectionRepository>();
             });
 
             DinglerEncoder.RegisterTypeSwap<TrackedPlayer, RemotePlayer>();

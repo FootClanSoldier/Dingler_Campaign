@@ -1,12 +1,14 @@
 using System.Security.Cryptography;
 using Dingler.Auth.AuthenticationService;
 using Dingler.Auth.Endpoints;
+using Dingler.Auth.Logging;
 using Dingler.Data.Configuration;
 using Dingler.Data.Context;
 using Dingler.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using Serilog.Events;
 
 namespace Dingler.Auth
 {
@@ -26,11 +28,20 @@ namespace Dingler.Auth
                 ContentRootPath = AppContext.BaseDirectory
             });
 
+            
             builder.Host.UseSerilog((context, services, configuration) =>
             {
-                configuration
+              var innerSink = new LoggerConfiguration()
                     .ReadFrom.Configuration(context.Configuration)
-                    .ReadFrom.Services(services);
+                    .ReadFrom.Services(services)
+                    .CreateLogger();
+
+              configuration
+                  .MinimumLevel.Verbose()
+                  .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+                  .MinimumLevel.Override("System", LogEventLevel.Warning)
+                  //.MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", LogEventLevel.Fatal)
+                  .WriteTo.Sink(new SecureSink(innerSink));
             });
 
             var connectionString = SqliteConnection.ResolveDataSource(

@@ -1,5 +1,5 @@
 ﻿extern alias HexGame;
-
+using HexGame::Game.Shared;
 using HexGame::Game.Shared.Mechanics;
 using HexGame::Reckoning.Game;
 
@@ -18,17 +18,16 @@ namespace Dingler.Game.Cards
             var context = card.GetCardContext();
             var prime = 17;
 
-            var hash = HashCode.Combine(prime, context.m_CurrentType, context.m_CurrentSubtype,
-                context.m_CurrentAttackValue, context.m_CurrentDefenseValue, context.m_CurrentResourceCost,
-                context.m_CastingCostAdjustment, context.m_CurrentAttributeFlags);
+            var hash = HashCode.Combine(prime, HashCardContext(context));
 
             foreach (var threshold in card.Thresholds)
             {
                 hash = HashCode.Combine(hash, threshold.GetHashCode());
             }
 
-            hash = HashCode.Combine(hash, card.CurrentCardState, card.CurrentDamageValue, card.EscalationCount);
-
+            hash = HashCode.Combine(hash, card.CurrentCardState, card.CurrentAttackValue, card.CurrentHealthValue, card.EscalationCount);
+            
+            
             if (card.m_CurrentCardCollection == ECardCollections.Deck)
                 hash = HashCode.Combine(hash, card.IsOnChain());
             
@@ -39,7 +38,15 @@ namespace Dingler.Game.Cards
             {
                 hash = HashCode.Combine(hash, abilityId.GetHashCode());
             }
+            
+            var integerVariables = new List<KeyValuePair<string, int>>(card.CardIntegerVariables);
+            integerVariables.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
 
+            foreach (var variable in integerVariables)
+            {
+                hash = HashCode.Combine(hash, variable.Key, variable.Value);
+            }
+            
             var counters = new List<KeyValuePair<CardCounterTemplate, int>>(card.Counters);
             counters.Sort(static (a, b) => a.Key.m_CardCounterId.guid.CompareTo(b.Key.m_CardCounterId.guid));
 
@@ -49,6 +56,10 @@ namespace Dingler.Game.Cards
                 var value = counter.Value;
                 hash = HashCode.Combine(hash, guid, value);
             }
+
+            hash = HashAbilityUseCounts(hash, card.m_PerGameUses);
+            hash = HashAbilityUseCounts(hash, card.m_PerTurnUses);
+            hash = HashAbilityUseCounts(hash, card.m_Cooldowns);
             
             return hash;
         }
@@ -88,6 +99,29 @@ namespace Dingler.Game.Cards
                     continue;
 
                 hash = HashCode.Combine(hash, attr.Key.name, attr.Value);
+            }
+
+            return hash;
+        }
+
+        private static int HashCardContext(CardContext context)
+        {
+            var hash = HashCode.Combine(context.m_CurrentType, context.m_CurrentSubtype,
+                context.m_CurrentAttackValue, context.m_CurrentDefenseValue, context.m_CurrentResourceCost,
+                context.m_CastingCostAdjustment, context.m_CurrentAttributeFlags);
+
+            hash = HashCode.Combine(hash, context.m_CurrentThresholds);
+
+            return hash;
+        }
+
+        private static int HashAbilityUseCounts(int hash, Dictionary<ResourceId, int> counts)
+        {
+            var list = new List<KeyValuePair<ResourceId, int>>(counts);
+            list.Sort(static (a, b) => a.Key.guid.CompareTo(b.Key.guid));
+            foreach (var kvp in list)
+            {
+                hash = HashCode.Combine(hash, kvp.Key, kvp.Value);
             }
 
             return hash;

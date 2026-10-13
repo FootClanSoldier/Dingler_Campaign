@@ -12,6 +12,7 @@ using Dingler.Game.Protocol.Messages.Json;
 using Dingler.Game.Tournaments.Registration.Rules;
 using Dingler.Game.Tournaments.StartCondition;
 using HexGame::Game.Shared;
+using HexGame::Game.Shared.Domain;
 using HexGame::Game.Shared.Network.Tournaments;
 using HexGame::Game.Shared.Tournaments;
 using HexGame::Game.Shared.TournamentSystemMkII;
@@ -64,6 +65,7 @@ public class TournamentManager : IAsyncStartupService
 		var tournaments = await _tournamentRepository.GetTournamentsAsync(token);
 
 		var descriptionList = new List<TournamentDesc>();
+		// StartConditionId 1 = on-demand waiting room (re-runnable); StartConditionId 2 = scheduled tournament.
 		var waitingRooms = tournaments.Where(t => t.StartConditionId == 1).ToList();
 		var scheduledTournaments = tournaments.Where(t => t.StartConditionId == 2).ToList();
 
@@ -93,18 +95,28 @@ public class TournamentManager : IAsyncStartupService
 		}
 
 		var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
-		
-		foreach (var tournamentDto in tournaments.Where(t => t.StartConditionId == 2).ToList())
+		var gameManager = _serviceProvider.GetRequiredService<GameManager>();
+		var cancellationManager = _serviceProvider.GetRequiredService<ICancellationManager>();
+
+		foreach (var tournamentDto in scheduledTournaments)
 		{
 			var tournamentId = Interlocked.Increment(ref _currentTournamentId);
 			var tournamentSettings = CreateTournamentSettings(tournamentDto);
 			var gameSettings = CreateGameSettings(tournamentDto);
-			var tournament = new Tournament(tournamentId, new ScheduledStartCondition(tournamentDto.StartDate),
-				sessionManager, _serviceProvider.GetRequiredService<GameManager>(), tournamentSettings, gameSettings, _serviceProvider.GetRequiredService<ICancellationManager>().StoppingToken);
+
+			var startCondition = new ScheduledStartCondition(tournamentDto.StartDate);
+
+			var cts = cancellationManager.CreateLinkedSource();
+			_tournamentCtsCollection.TryAdd(tournamentId, cts);
+
+			var tournament = new Tournament(tournamentId, startCondition, sessionManager, gameManager,
+				tournamentSettings, gameSettings, cts.Token, BuildPhases(tournamentSettings));
 
 			_tournamentCommunicator.RegisterTournamentMethods(tournament);
 			tournament.Cleanup += Cleanup; 
 			_tournaments.TryAdd(tournamentId, tournament);
+			_ = tournament.LaunchAsync(cts.Token);
+
 			descriptionList.Add(new TournamentDesc(tournamentId, tournamentSettings.MinPlayers,
 				tournamentSettings.MaxPlayers, tournamentSettings.Description, Array.Empty<string>(), 0, 0, 0)
 			{
@@ -142,7 +154,7 @@ public class TournamentManager : IAsyncStartupService
 		// Hardcoding to just make on full rooms for now. I hate this and want to move on. I'll eventually let players
 		// schedule tournaments but god I just want a break
 		var tournament = new Tournament(assignedId, new WhenFullStartCondition(), sessionManager, gameManager, tournamentSettings,
-			gameSettings, cts.Token);
+			gameSettings, cts.Token, BuildPhases(tournamentSettings));
 
 		_tournamentCommunicator.RegisterTournamentMethods(tournament);
 		tournament.Cleanup += Cleanup;
@@ -151,58 +163,94 @@ public class TournamentManager : IAsyncStartupService
 		return tournament;
 	}
 	
+	private static ETournamentFormats GetFormat(int tournamentTypeId) => tournamentTypeId switch
+	{
+		1 => ETournamentFormats.Booster_Draft,
+		2 => ETournamentFormats.Sealed_Deck,
+		4 => ETournamentFormats.Immortal,
+		_ => ETournamentFormats.Constructed,
+	};
+
+	private static ETournamentFormats GetSetFormatFlags(IEnumerable<int> draftSetIds)
+	{
+		var flags = ETournamentFormats.Constructed;
+		foreach (var setId in draftSetIds)
+		{
+			flags |= setId switch
+			{
+				1 or 2 => ETournamentFormats.Chapter1,
+				3 or 4 => ETournamentFormats.Chapter2,
+				5 or 6 => ETournamentFormats.Chapter3,
+				7 or 8 => ETournamentFormats.Chapter4,
+				9 or 10 => ETournamentFormats.Chapter5,
+				_ => ETournamentFormats.Constructed,
+			};
+		}
+
+		return flags;
+	}
+
 	private static TournamentSettings CreateTournamentSettings(Data.Entities.GameData.Tournament tournament)
 	{
-		ETournamentFormats format;
-		if (tournament.TournamentType.Id == 3) // standard
-		{
-			format = ETournamentFormats.Constructed;
-		}
-		else
-		{
-			format = ETournamentFormats.Immortal;
-		}
+		var format = GetFormat(tournament.TournamentType.Id);
 
-		ETournamentStyle style;
+		var style = tournament.MatchType.Id == 1
+			? ETournamentStyle.Single_Elimination
+			: ETournamentStyle.Swiss;
 
-		if (tournament.MatchType.Id == 1)
-		{
-			style = ETournamentStyle.Single_Elimination;
-		}
-		else
-		{
-			style = ETournamentStyle.Swiss;
-		}
+		var draftSetIds = tournament.DraftSets?
+			.OrderBy(ds => ds.Order)
+			.Select(ds => ds.CardSetId)
+			.ToList() ?? new List<int>();
+
+		// Restrict legal cards/champions to the sets in the draft pool (e.g. set 1-2-2 -> Chapter1 = sets 1+2).
+		format |= GetSetFormatFlags(draftSetIds);
 
 		return new TournamentSettings(DateTime.Now.Ticks, tournament.NeededPlayers, tournament.NeededPlayers,
 			tournament.Description, DateTime.Now.Ticks, DateTime.MaxValue.Ticks, format, style, isSpawner: true,
-			isWaitingRoom: false);
+			isWaitingRoom: false, configId: tournament.Id, draftSetIds: draftSetIds);
 	}
 
 	private static GameSettings CreateGameSettings(Data.Entities.GameData.Tournament tournament)
 	{
 		var sessionFlags = ESessionFlags.IsTournament;
+		var seriesType = SessionStateEncounterData.SeriesType.CONSTRUCTED;
 
-		if (tournament.TournamentType.Id == 3)
+		switch (tournament.TournamentType.Id)
 		{
-			sessionFlags |= ESessionFlags.IsStandardPvP;
-		}
-		else
-		{
-			sessionFlags |= ESessionFlags.IsImmortalPvP;
+			case 1: // draft
+				sessionFlags |= ESessionFlags.IsDraft;
+				seriesType = SessionStateEncounterData.SeriesType.DRAFT;
+				break;
+			case 2: // sealed
+				sessionFlags |= ESessionFlags.IsSealed;
+				seriesType = SessionStateEncounterData.SeriesType.SEALED;
+				break;
+			case 3: // standard
+				sessionFlags |= ESessionFlags.IsStandardPvP;
+				break;
+			default: // immortal
+				sessionFlags |= ESessionFlags.IsImmortalPvP;
+				break;
 		}
 
-		ETournamentFormats format;
-		if (tournament.TournamentType.Id == 3) // standard
+		return new GameSettings(sessionFlags, GetFormat(tournament.TournamentType.Id), seriesType);
+	}
+
+	private List<ITournamentPhase> BuildPhases(TournamentSettings settings)
+	{
+		var phases = new List<ITournamentPhase>();
+
+		if (settings.TournamentFormat.HasFlag(ETournamentFormats.Booster_Draft))
 		{
-			format = ETournamentFormats.Constructed;
-		}
-		else
-		{
-			format = ETournamentFormats.Immortal;
+			var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
+			var repository = _serviceProvider.GetRequiredService<DraftCollectionRepository>();
+			phases.Add(new DraftPhase(sessionManager, repository, settings.DraftSetIds, settings.ConfigId));
+			phases.Add(new DeckBuildingPhase(sessionManager, repository, settings.ConfigId));
 		}
 
-		return new GameSettings(sessionFlags, format, SessionStateEncounterData.SeriesType.CONSTRUCTED);
+		phases.Add(new GamePhase());
+		return phases;
 	}
 
 	public void TrackPlayer(string username, ulong tournamentId)
@@ -304,5 +352,24 @@ public class TournamentManager : IAsyncStartupService
 		if (!cts.IsCancellationRequested)
 			cts.Cancel();
 		cts.Dispose();
+	}
+
+	public async Task SeedDraftBotsAsync(int count)
+	{
+		#if RELEASE
+		return;
+		#endif
+		var draftTournament = _tournaments.Values.FirstOrDefault(t => t.DraftPhase is not null);
+		if (draftTournament is null)
+			return;
+
+		for (var i = 0; i < count; i++)
+		{
+			var username = $"DraftBot{i + 1}";
+			var playerUid = new UID(UID.Type.ServicePlayer, (ulong)(1_000_000 + i));
+
+			draftTournament.DraftPhase!.AddAutoPicker(username);
+			await draftTournament.RegisterAsync(username, new deck_bits(), playerUid);
+		}
 	}
 }

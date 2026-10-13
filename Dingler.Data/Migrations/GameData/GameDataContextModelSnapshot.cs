@@ -139,6 +139,32 @@ namespace Dingler.Data.Migrations.GameData
                     b.ToTable("Decks");
                 });
 
+            modelBuilder.Entity("Dingler.Data.Entities.GameData.DraftCollection", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CardsJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeckJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<ulong>("PlayerProfileId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TournamentId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "TournamentId", "PlayerProfileId" }, "IX_DraftCollections_TournamentId_PlayerProfileId")
+                        .IsUnique();
+
+                    b.ToTable("DraftCollections", (string)null);
+                });
+
             modelBuilder.Entity("Dingler.Data.Entities.GameData.DraftSet", b =>
                 {
                     b.Property<int>("Id")

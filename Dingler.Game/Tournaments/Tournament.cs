@@ -11,7 +11,6 @@ using HexGame::Game.Shared;
 using HexGame::Game.Shared.Domain;
 using HexGame::Game.Shared.Tournaments;
 using HexGame::Game.Shared.TournamentSystemMkII;
-using Microsoft.Extensions.Logging;
 
 namespace Dingler.Game.Tournaments;
 
@@ -49,16 +48,16 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 	private readonly SemaphoreSlim _semaphoreSlim;
 	private readonly IStartCondition _startCondition;
 	private readonly CancellationToken _tournamentToken;
-	private readonly ILogger<Tournament>? _logger;
 	private readonly MatchManager _matchManager;
+	private readonly IReadOnlyList<ITournamentPhase> _phases;
+	private readonly DeckBuildingPhase? _deckBuildingPhase;
 
 	private ulong _numberOfGamesPlayed = 0;
-	private List<TournamentGameInfo> _gamesForTheRound = new List<TournamentGameInfo>();
 
 // Don't call this normally. Use TournamentManager.CreateTournament
 	public Tournament(ulong id, IStartCondition startCondition, SessionManager sessionManager, GameManager gameManager,
 		TournamentSettings tournamentSettings, GameSettings gameSettings, CancellationToken tournamentToken,
-		bool isWaitingRoom = false, ILogger<Tournament>? logger = null)
+		IReadOnlyList<ITournamentPhase>? phases = null, bool isWaitingRoom = false)
 	{
 		Id = id;
 		var tournamentInfo = new TournamentInfo()
@@ -90,8 +89,9 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 		IsWaitingRoom = isWaitingRoom;
 		_tournamentToken = tournamentToken;
 		_matchManager = new MatchManager(gameManager, gameSettings, _actor.State.TournamentInfo, sessionManager);
-		_gamesForTheRound = new List<TournamentGameInfo>();
-		_logger = logger;
+		_phases = phases ?? Array.Empty<ITournamentPhase>();
+		DraftPhase = _phases.OfType<DraftPhase>().FirstOrDefault();
+		_deckBuildingPhase = _phases.OfType<DeckBuildingPhase>().FirstOrDefault();
 	}
 	
 	public Task<RegistrationResult> RegisterAsync(string username, deck_bits deck, UID playerUid)
@@ -177,7 +177,7 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 		_ = _actor.RunAsync(token);
 		await _startCondition.WaitForStartAsync(this, token);
 
-		_ = _actor.ScheduleWork(state =>
+		await _actor.ScheduleWork(state =>
 		{
 			if (state.TournamentInfo.State != TournamentState.WaitForStart)
 				return;
@@ -194,9 +194,14 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 			state.CurrentRound = 0;
 			state.VersionNumber++;
 			TournamentStart?.Invoke(this, state);
-
-			_ = MonitorTournamentRounds(state.TournamentInfo.NumberOfRounds);
 		});
+
+		foreach (var phase in _phases)
+			await phase.RunAsync(this, token);
+
+		await _actor.ScheduleWork(state => TournamentComplete?.Invoke(this, state));
+		_actor.Finish();
+		Cleanup?.Invoke(this);
 	}
 	
 	private int CalculateNumberOfRounds(ETournamentStyle style, int playerCount)
@@ -213,19 +218,18 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 		return (int)Math.Ceiling(Math.Log(playerCount, 2.0));
 	}
 
-	private async Task MonitorTournamentRounds(int numberOfRounds)
+	// The pairing/game/elimination loop, run by the GamePhase. Lives here because it owns the actor and match
+	// manager and raises the tournament events.
+	internal async Task RunGamePhaseAsync(CancellationToken token)
 	{
+		var numberOfRounds = await _actor.ScheduleWork(state => state.TournamentInfo.NumberOfRounds);
+
 		for (int i = 0; i < numberOfRounds; i++)
 		{
 			var games = await BeginRoundAsync(numberOfRounds);
 
 			await Task.WhenAll(games);
 		}
-
-		await _actor.ScheduleWork(state => TournamentComplete?.Invoke(this, state));
-		_actor.Finish();
-		Cleanup?.Invoke(this);
-		
 	}
 
 	private List<TournamentPairing> GeneratePairings(TournamentRoomState state)
@@ -320,19 +324,6 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 		}
 	}
 
-	private Task<(UID, UID)> MonitorMatchAsync(HexGameWrapper game)
-	{
-		try
-		{
-			return game.RunGameAsync();
-		}
-		catch (Exception ex)
-		{
-			_logger?.LogError("Error in game: {ex}", ex);
-			throw;
-		}
-	}
-	
 	private ulong GetPlayerIndex(TournamentRoomState state, string username)
 	{
 		return (ulong)state.TournamentInfo.Players.FindIndex(p => p.Name == username);
@@ -395,11 +386,21 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 
 	public void UpdateDeck(string username, deck_bits deck)
 	{
+		// Limited formats build their deck in the deck-building phase before any match exists.
+		if (_deckBuildingPhase?.SubmitDeck(username, deck) == true)
+			return;
+
 		if (!_matchManager.TryGetMatchForPlayer(username, out var match))
 			return;
 		
 		match.DeckSubmitted(username, deck);
 	}
+
+	internal DraftPhase? DraftPhase { get; }
+
+	internal Task ScheduleWork(Action<TournamentRoomState> work) => _actor.ScheduleWork(work);
+
+	internal Task<TResult> ScheduleWork<TResult>(Func<TournamentRoomState, TResult> work) => _actor.ScheduleWork(work);
 
 	public void HandlePlayerWantsToLeave(string username)
 	{

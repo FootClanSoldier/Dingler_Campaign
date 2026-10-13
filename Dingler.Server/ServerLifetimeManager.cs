@@ -39,6 +39,11 @@ namespace Dingler.Server
             _server = null;
         }
 
+        public T? GetServerService<T>() where T : class
+        {
+            return _serviceScope?.ServiceProvider.GetService<T>();
+        }
+
         public void Dispose()
         {
             _serviceScope?.Dispose();

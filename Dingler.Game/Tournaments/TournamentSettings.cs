@@ -1,4 +1,5 @@
 extern alias HexGame;
+using System;
 using HexGame::Game.Shared.Tournaments;
 
 namespace Dingler.Game.Tournaments;
@@ -16,9 +17,14 @@ public class TournamentSettings
 	public bool IsSpawner { get; set; }
 	public bool IsWaitingRoom { get; set; }
 
+	public int ConfigId { get; }
+
+	public IReadOnlyList<int> DraftSetIds { get; }
+
 	public TournamentSettings(long registrationOpenTime, int maxPlayers, int minPlayers, string description,
 		long tournamentStartTime, long tournamentEndTime, ETournamentFormats tournamentFormat,
-		ETournamentStyle tournamentStyle, bool isSpawner, bool isWaitingRoom)
+		ETournamentStyle tournamentStyle, bool isSpawner, bool isWaitingRoom, int configId = 0,
+		IReadOnlyList<int>? draftSetIds = null)
 	{
 		RegistrationOpenTime = registrationOpenTime;
 		MaxPlayers = maxPlayers;
@@ -30,12 +36,14 @@ public class TournamentSettings
 		TournamentStyle = tournamentStyle;
 		IsSpawner = isSpawner;
 		IsWaitingRoom = isWaitingRoom;
+		ConfigId = configId;
+		DraftSetIds = draftSetIds ?? Array.Empty<int>();
 	}
 
 	public TournamentSettings CreateWaitingRoomSettings()
 	{
 		return new TournamentSettings(RegistrationOpenTime, MaxPlayers, MinPlayers, Description, TournamentStartTime,
-			TournamentEndTime, TournamentFormat, TournamentStyle, false, true);
+			TournamentEndTime, TournamentFormat, TournamentStyle, false, true, ConfigId, DraftSetIds);
 	}
 
 }

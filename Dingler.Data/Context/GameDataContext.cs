@@ -23,6 +23,8 @@ public partial class GameDataContext : DbContext
     public virtual DbSet<PlayerProfile> PlayerProfiles { get; set; }
     public virtual DbSet<Tournament> Tournaments { get; set; }
 
+    public virtual DbSet<DraftCollection> DraftCollections { get; set; }
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (!optionsBuilder.IsConfigured)
@@ -148,6 +150,15 @@ public partial class GameDataContext : DbContext
             entity.HasOne(ds => ds.CardSet)
                 .WithMany(p => p.DraftSets)
                 .HasForeignKey(ds => ds.CardSetId);
+        });
+
+        modelBuilder.Entity<DraftCollection>(entity =>
+        {
+            entity.ToTable("DraftCollections");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => new { e.TournamentId, e.PlayerProfileId }, "IX_DraftCollections_TournamentId_PlayerProfileId")
+                .IsUnique();
         });
 
         modelBuilder.Entity<StartCondition>(entity =>

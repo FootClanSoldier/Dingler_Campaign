@@ -21,22 +21,17 @@ public class TournamentRepository
         return await context.Tournaments.Select(selector).ToListAsync(token);
     }
 
-    public Task<List<Tournament>> GetTournamentsAsync(CancellationToken token)
+    public async Task<List<Tournament>> GetTournamentsAsync(CancellationToken token)
     {
-        return GetTournamentsAsync(t => new Tournament()
-        {
-            Id = t.Id,
-            DraftSets = t.DraftSets,
-            MatchType = t.MatchType,
-            MatchTypeId = t.MatchTypeId,
-            NeededPlayers = t.NeededPlayers,
-            StartCondition = t.StartCondition,
-            StartConditionId = t.StartConditionId,
-            StartDate = t.StartDate,
-            TournamentType = t.TournamentType,
-            TournamentTypeId = t.TournamentTypeId,
-            Description = t.Description
-        }, token);
+        var context = await _dbContextFactory.CreateDbContextAsync(token);
+
+        return await context.Tournaments
+            .Include(t => t.DraftSets)
+            .Include(t => t.TournamentType)
+            .Include(t => t.MatchType)
+            .Include(t => t.StartCondition)
+            .AsNoTracking()
+            .ToListAsync(token);
     }
 
     public async Task<T?> GetTournamentAsync<T>(Expression<Func<Tournament, T>> selector, int id)
