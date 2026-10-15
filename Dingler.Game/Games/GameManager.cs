@@ -1,4 +1,4 @@
-﻿extern alias HexGame;
+extern alias HexGame;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using Dingler.Server;
@@ -238,6 +238,7 @@ public sealed class GameManager : IDisposable
 		UID humanId,
 		deck_bits humanDeck,
 		champion_bits campaignChampion,
+		IReadOnlyList<ResourceId> partyMemberTemplates,
 		string userName,
 		List<ETurnPhases>? selfStops,
 		List<ETurnPhases>? opponentStops,
@@ -281,7 +282,7 @@ public sealed class GameManager : IDisposable
 		{
 			wrapper.TryAddPlayer(human);
 			wrapper.TryAddPlayer(ai);
-			engine.ConfigureCampaignPlayer(humanId, campaignChampion, humanDeck, userName);
+			engine.ConfigureCampaignPlayer(humanId, campaignChampion, humanDeck, partyMemberTemplates, userName);
 			engine.AttachAiSeat(new ArenaAiSeat(engine, ai, human, _loggerFactory?.CreateLogger("CampaignAi")));
 			engine.StartCampaignGame(human, ai);
 		}

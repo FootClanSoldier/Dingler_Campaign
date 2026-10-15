@@ -14,8 +14,8 @@ public static class CampaignChampionProjection
         {
             Id = saved.ChampionId,
             Name = saved.Name,
-            Level = 1,
-            CurrentXP = 0,
+            Level = Math.Max(1, saved.Level),
+            CurrentXP = Math.Max(0, saved.CurrentXP),
             Race = (ERace)saved.Race,
             ChampionClass = (EChampionClass)saved.ChampionClass,
             Gender = (EGender)saved.Gender,

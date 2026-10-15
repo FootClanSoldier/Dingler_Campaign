@@ -4,6 +4,7 @@ using Dingler.Server;
 using Dingler.Server.Abstractions;
 using Dingler.Server.Attributes;
 using HexGame::Game.Shared.Network.Profile;
+using HexGame::Game.Client.Network.Profile;
 using Microsoft.Extensions.Logging;
 
 namespace Dingler.Game.Handlers.Request.Profile;
@@ -102,11 +103,11 @@ public sealed class UpdateChampionDeckIdRequestHandler : IRequestHandler<UpdateC
 }
 
 /// <summary>
-/// Stores the selected campaign champion's talents. The client sends this adjacent to
-/// UpdateChampionDeckID while leaving the deck builder. No battle/talent rules are implemented here.
+/// Saves the selected campaign champion's talents and returns the authoritative
+/// champion state so the client can confirm the change.
 /// </summary>
 [Authenticated]
-public sealed class UpdateChampionTalentsRequestHandler : IRequestHandler<UpdateChampionTalentsRequestArgs>
+public sealed class UpdateChampionTalentsRequestHandler : IRequestHandler<UpdateChampionTalentsRequestArgs, UpdateChampionTalentsResponse>
 {
     private readonly CampaignRunStore _store;
     private readonly ILogger<UpdateChampionTalentsRequestHandler>? _logger;
@@ -119,7 +120,7 @@ public sealed class UpdateChampionTalentsRequestHandler : IRequestHandler<Update
         _logger = logger;
     }
 
-    public void HandleRequest(SessionContext context, UpdateChampionTalentsRequestArgs request)
+    public UpdateChampionTalentsResponse HandleRequest(SessionContext context, UpdateChampionTalentsRequestArgs request)
     {
         if (!CampaignChampionRequestReader.TryReadUInt64(
                 request, out var requestedChampionId,
@@ -129,7 +130,7 @@ public sealed class UpdateChampionTalentsRequestHandler : IRequestHandler<Update
                 "Campaign: {user} sent {requestType} without a champion ID; members: {members}",
                 context.UserName, request.GetType().Name,
                 CampaignChampionRequestReader.DescribePublicMembers(request));
-            return;
+            return Failure("Missing champion ID");
         }
 
         if (!_store.TryGetOwnedChampion(context.ProfileId, requestedChampionId,
@@ -140,22 +141,42 @@ public sealed class UpdateChampionTalentsRequestHandler : IRequestHandler<Update
             _logger?.LogWarning(
                 "Campaign: {user} tried to update talents for unknown or unowned champion {champion}",
                 context.UserName, requestedChampionId);
-            return;
+            return Failure("Champion not found");
         }
-        var championId = owner.ChampionId;
-        var race = owner.Race;
 
         if (!CampaignChampionRequestReader.TryReadTalentIds(request, out var talents))
         {
             _logger?.LogWarning(
                 "Campaign: could not read talents from {requestType}; members: {members}",
                 request.GetType().FullName, CampaignChampionRequestReader.DescribePublicMembers(request));
-            return;
+            return Failure("Invalid champion talents");
         }
 
-        _store.SetChampionTalents(context.ProfileId, championId, race, talents);
-        _logger?.LogInformation(
-            "Campaign: {user} stored {count} talent(s) for champion {champion}",
-            context.UserName, talents.Count, championId);
+        try
+        {
+            var previousCount = owner.ChampionTalents.Count;
+            _store.SetChampionTalents(context.ProfileId, owner.ChampionId, owner.Race, talents);
+            if (!_store.TryGetOwnedChampion(context.ProfileId, owner.ChampionId, out var updated))
+                return Failure("Could not reload champion talents");
+
+            _logger?.LogInformation(
+                "Campaign: {user} stored {count} champion talent IDs (previously {previous}) for champion {champion}",
+                context.UserName, updated.ChampionTalents.Count, previousCount, owner.ChampionId);
+
+            return new UpdateChampionTalentsResponse
+            {
+                Error = EUpdateChampionTalentsError.Ok,
+                ChampionBits = CampaignChampionProjection.CreateFromSaved(updated),
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex,
+                "Campaign: failed to save talents for champion {champion}", owner.ChampionId);
+            return Failure("Could not save champion talents");
+        }
     }
+
+    private static UpdateChampionTalentsResponse Failure(string message) =>
+        new() { Error = EUpdateChampionTalentsError.InternalServerError, ErrorMessage = message };
 }

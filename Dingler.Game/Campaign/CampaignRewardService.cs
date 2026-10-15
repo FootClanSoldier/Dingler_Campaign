@@ -3,15 +3,15 @@ using System.Text.Json.Nodes;
 namespace Dingler.Game.Campaign;
 
 /// <summary>
-/// Applies independent reward rules to completed campaign events. Gold and XP
-/// are presentation grants; native captured cards also create profile receipts.
+/// Applies independent reward rules to completed campaign events. Gold remains
+/// display-only; XP is committed by the campaign store with each reward receipt.
 /// </summary>
 public sealed class CampaignRewardService
 {
     public JsonObject Apply(CampaignRunRecord run, string encounterGuid, bool won,
         IReadOnlyList<Guid>? capturedTemplates,
         Func<string, string, string, ulong?> capturedCardInstanceId,
-        out string summary)
+        Func<string, string, bool> isKnownLootTemplate, out string summary)
     {
         if (!won || !CampaignRewardCatalog.TryGet(encounterGuid, out var definition))
         {
@@ -21,14 +21,15 @@ public sealed class CampaignRewardService
         return ApplyRules(run, definition.Rewards, "Victory",
             $"{definition.EncounterGuid}:", capturedTemplates,
             (ruleId, template) => capturedCardInstanceId(definition.EncounterGuid, ruleId, template),
-            out summary);
+            isKnownLootTemplate, out summary);
     }
 
     /// <summary>
     /// Must be invoked inside the caller's atomic QUEST turn-in transaction,
     /// after the authored quest has genuinely reached the Complete state.
     /// </summary>
-    public JsonObject ApplyQuestCompletion(CampaignRunRecord quest, out string summary)
+    public JsonObject ApplyQuestCompletion(CampaignRunRecord quest,
+        Func<string, string, bool> isKnownLootTemplate, out string summary)
     {
         if (!string.Equals(quest.CampaignType, "QUEST", StringComparison.OrdinalIgnoreCase)
             || quest.State["Finished"] is null
@@ -39,14 +40,15 @@ public sealed class CampaignRewardService
             return CampaignStateFactory.EmptyAppliedUpdates();
         }
         return ApplyRules(quest, definition.Rewards, "QuestCompleted",
-            $"quest:{definition.Quest.ToLowerInvariant()}:", null, null, out summary);
+            $"quest:{definition.Quest.ToLowerInvariant()}:", null, null,
+            isKnownLootTemplate, out summary);
     }
 
     private static JsonObject ApplyRules(CampaignRunRecord run,
         IReadOnlyList<CampaignRewardRule> rules, string trigger, string claimPrefix,
         IReadOnlyList<Guid>? capturedTemplates,
         Func<string, string, ulong?>? capturedCardInstanceId,
-        out string summary)
+        Func<string, string, bool> isKnownLootTemplate, out string summary)
     {
         var applied = CampaignStateFactory.EmptyAppliedUpdates();
         run.RewardClaims ??= new Dictionary<string, string>();
@@ -62,9 +64,8 @@ public sealed class CampaignRewardService
             if (!result.Satisfied)
                 continue;
 
-            // Resolve card instance IDs before emitting any grant or committing
-            // a receipt, so an unavailable profile collection cannot create a
-            // partial payout for a compound reward rule.
+            // Resolve popup card IDs before committing a once-only XP receipt,
+            // so a compound reward is never displayed partially.
             var captured = new List<(string Template, ulong InstanceId)>();
             var failed = false;
             foreach (var grant in rule.Grants.Where(static grant => grant.Type == "CapturedCard"))
@@ -79,6 +80,31 @@ public sealed class CampaignRewardService
                 }
                 captured.Add((template, instanceId.Value));
             }
+            // Validate templates before emitting any display reward or XP receipt.
+            var pendingLoot = new List<CampaignRewardDisplayLoot>();
+            for (var grantIndex = 0; grantIndex < rule.Grants.Count && !failed; grantIndex++)
+            {
+                var grant = rule.Grants[grantIndex];
+                if (grant.Type is not ("Card" or "Item"))
+                    continue;
+                var template = grant.TemplateGuid!;
+                if (!isKnownLootTemplate(grant.Type, template))
+                {
+                    failed = true;
+                    break;
+                }
+                for (var unit = 0; unit < grant.Quantity!.Value; unit++)
+                {
+                    var loot = CampaignRewardDisplayLoot.Create(run, $"{key}:{grantIndex}",
+                        grant.Type, template, unit);
+                    if (pendingLoot.Any(existing => existing.InstanceId == loot.InstanceId))
+                    {
+                        failed = true;
+                        break;
+                    }
+                    pendingLoot.Add(loot);
+                }
+            }
             if (failed)
                 continue;
 
@@ -92,12 +118,22 @@ public sealed class CampaignRewardService
                         var card = captured[0];
                         AddCapturedCard(applied, card.Template, card.InstanceId);
                         break;
+                    case "Card":
+                    case "Item":
+                        // Display card/item grants without changing the profile collection.
+                        break;
                 }
             }
+            foreach (var loot in pendingLoot)
+            {
+                loot.AddApplied(applied);
+            }
             if (rule.ClaimPolicy == "OncePerCampaign")
-                run.RewardClaims[key] = captured.Count > 0 ? captured[0].Template : "claimed";
+                run.RewardClaims[key] = "claimed";
             reports.Add($"{rule.Id} ({rule.Evidence}): " + string.Join(", ", rule.Grants.Select(grant =>
-                grant.Type == "CapturedCard" ? $"captured={captured[0].Template}" : $"{grant.Type}={grant.Amount}")));
+                grant.Type == "CapturedCard" ? $"captured={captured[0].Template}" :
+                    grant.Type is "Card" or "Item" ? $"{grant.Type}={grant.Quantity}x{grant.TemplateGuid}" :
+                    $"{grant.Type}={grant.Amount}")));
         }
         // The client normally displays Completed actions in received order.
         // Apply one shared display order after independent reward rules resolve.

@@ -8,15 +8,15 @@
           "Id": "completed",
           "Trigger": "QuestCompleted",
           "ClaimPolicy": "OncePerCampaign",
-          "Evidence": "Provisional",
+          "Evidence": "CommunityReport",
           "Grants": [
             {
               "Type": "XP",
-              "Amount": 1
+              "Amount": 500
             },
             {
               "Type": "Gold",
-              "Amount": 1
+              "Amount": 150
             }
           ]
         }

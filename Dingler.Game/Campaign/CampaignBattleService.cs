@@ -7,6 +7,9 @@ using Dingler.Game.Games;
 using Dingler.Server;
 using HexGame::Game.Shared;
 using HexGame::Game.Shared.Mechanics;
+using HexGame::Reckoning.Game;
+using HexGame::Game.Shared.Domain;
+using Dingler.Game.Services;
 using Microsoft.Extensions.Logging;
 
 namespace Dingler.Game.Campaign;
@@ -24,6 +27,7 @@ public sealed class CampaignBattleService
         ulong CampaignId,
         ulong ChampionId,
         string EncounterGuid,
+        string? MercenaryItemGuid,
         SessionState SessionState,
         string? Refusal);
 
@@ -52,6 +56,7 @@ public sealed class CampaignBattleService
     private readonly CampaignRunStore _store;
     private readonly CampaignOptions _options;
     private readonly CampaignService _campaignService;
+    private readonly CollectionCacheService _collection;
     private readonly ILogger<CampaignBattleService>? _logger;
     private readonly ConcurrentDictionary<ulong, PendingBattle> _pending = new();
     private readonly ConcurrentDictionary<ulong, JoinedBattle> _joined = new();
@@ -61,11 +66,13 @@ public sealed class CampaignBattleService
         CampaignRunStore store,
         CampaignOptions options,
         CampaignService campaignService,
+        CollectionCacheService collection,
         ILogger<CampaignBattleService>? logger = null)
     {
         _store = store;
         _options = options;
         _campaignService = campaignService;
+        _collection = collection;
         _logger = logger;
     }
 
@@ -124,6 +131,7 @@ public sealed class CampaignBattleService
             campaignId,
             run?.ChampionId ?? 0,
             encounterGuid,
+            run?.State["BattleMercenaryItem"]?.ToString(),
             state,
             refusal);
         _pending[context.ProfileId] = pending;
@@ -143,6 +151,11 @@ public sealed class CampaignBattleService
 
         return pending;
     }
+
+    public bool HasChampionBattle(ulong profileId, ulong championId) =>
+        (_pending.TryGetValue(profileId, out var pending) && pending.ChampionId == championId) ||
+        (_joined.TryGetValue(profileId, out var joined) && joined.Pending.ChampionId == championId) ||
+        (_active.TryGetValue(profileId, out var active) && active.Joined.Pending.ChampionId == championId);
 
     public bool TryGetPending(SessionContext context, out PendingBattle pending) =>
         _pending.TryGetValue(context.ProfileId, out pending!);
@@ -185,6 +198,53 @@ public sealed class CampaignBattleService
         if (!context.Decks.ContainsKey(run.LastDeckId))
             return Fail($"deck {run.LastDeckId} not found in the player's decks", out reason);
 
+        var manager = HexGame::Singleton<TemplateManager>.Instance;
+        var partyTemplates = new List<ResourceId>();
+        var partyItems = new Dictionary<Guid, (ResourceId Template, CampaignMercenaryPartyMember Member)>();
+        foreach (var member in savedChampion.PartyMembers)
+        {
+            if (!Guid.TryParse(member.MercenaryItemGuid, out var itemGuid)
+                || itemGuid == Guid.Empty
+                || !_collection.IsOwnedMercenary(context.ProfileId, new ResourceId(itemGuid.ToString("D")))
+                || manager.GetInventoryItem(new ResourceId(itemGuid.ToString("D"))) is not InventoryMercenaryData inventory
+                || inventory.MercenaryTemplate is null)
+                continue;
+            var templateId = inventory.MercenaryTemplate.Id;
+            if (partyItems.TryAdd(itemGuid, (templateId, member)))
+                partyTemplates.Add(templateId);
+        }
+
+        var champion = CampaignChampionProjection.CreateFromSaved(savedChampion);
+        deck_bits gameDeck = context.Decks[run.LastDeckId];
+        if (!string.IsNullOrEmpty(pending.MercenaryItemGuid))
+        {
+            if (!string.Equals(run.State["BattleMercenaryItem"]?.ToString(),
+                    pending.MercenaryItemGuid, StringComparison.OrdinalIgnoreCase)
+                || !Guid.TryParse(pending.MercenaryItemGuid, out var requested)
+                || !partyItems.TryGetValue(requested, out var selected)
+                || selected.Member.DeckTemplateId == 0
+                || !_store.TryGetProfileDeck(context.ProfileId, selected.Member.DeckTemplateId, out var savedDeck)
+                || !string.Equals(savedDeck.ChampionTemplateGuid, selected.Template.ToString(),
+                    StringComparison.OrdinalIgnoreCase))
+                return Fail("selected mercenary or its saved deck is no longer valid", out reason);
+            try
+            {
+                var template = HexGame::Game.Shared.Profile.ProfileDeckTemplate.FromBytes(savedDeck.Data);
+                if (template.Champ != selected.Template || !template.CardDesc.Any())
+                    return Fail("selected mercenary deck does not match its mercenary", out reason);
+                gameDeck = template.AsFakeDeck();
+                champion.MercID = selected.Template;
+                _logger?.LogInformation(
+                    "Campaign battle: {user} selected mercenary {merc} using profile deck {deck}",
+                    context.UserName, selected.Template, selected.Member.DeckTemplateId);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Campaign battle: malformed saved mercenary deck");
+                return Fail("selected mercenary deck could not be loaded", out reason);
+            }
+        }
+
         joined = new JoinedBattle
         {
             Pending = pending,
@@ -201,10 +261,9 @@ public sealed class CampaignBattleService
         _active[context.ProfileId] = active;
         try
         {
-            var champion = CampaignChampionProjection.CreateFromSaved(savedChampion);
             active.Game = games.CreateCampaignGame(
                 pending.GameId, pending.SessionState.SessionName, pending.SessionState.EncounterData,
-                joined.Human, context.Decks[run.LastDeckId], champion, context.UserName!,
+                joined.Human, gameDeck, champion, partyTemplates, context.UserName!,
                 selfTurnPhases, opponentTurnPhases, joined.Ai,
                 (engine, winners, losers) => OnGameEnded(context.ProfileId, context.UserName!, active, engine, winners));
         }

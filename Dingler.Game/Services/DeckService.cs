@@ -135,6 +135,15 @@ namespace Dingler.Game.Services
             }
         }
 
+        public async Task<IReadOnlyList<ulong>> DeleteChampionDecksAsync(SessionContext context, ulong championId)
+        {
+            var removed = await _deckRepository.RemoveChampionDecksAsync(context.ProfileId, championId)
+                .ConfigureAwait(false);
+            foreach (var id in removed)
+                context.Decks.Remove(id);
+            return removed;
+        }
+
         public async Task<List<Deck>> GetPlayerDecksAsync(ulong playerProfileId)
         {
             var decks = await _deckRepository.GetAllDecksOwnedByPlayerIdAsync(playerProfileId).ConfigureAwait(false);

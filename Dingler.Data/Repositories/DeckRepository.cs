@@ -1,4 +1,5 @@
-﻿using Dingler.Data.Context;
+using Dingler.Data.Context;
+using System.Text.Json;
 using Dingler.Data.Entities.GameData;
 using Dingler.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -47,6 +48,28 @@ namespace Dingler.Data.Repositories
             {
                 context.Decks.Update(deck);
                 return Task.CompletedTask;
+            });
+        }
+
+        /// <summary>Delete only PvE decks explicitly bound to this profile's deleted champion.</summary>
+        public Task<List<ulong>> RemoveChampionDecksAsync(ulong profileId, ulong championId)
+        {
+            return EnqueueWriteAsync<List<ulong>>(async context =>
+            {
+                var decks = await context.Decks.Where(deck => deck.PlayerProfileId == profileId
+                    && deck.DeckBitsJson != null).ToListAsync().ConfigureAwait(false);
+                var removed = new List<ulong>();
+                foreach (var deck in decks)
+                {
+                    using var document = JsonDocument.Parse(deck.DeckBitsJson!);
+                    if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                        !document.RootElement.TryGetProperty("PVEChampionId", out var owner) ||
+                        !owner.TryGetUInt64(out var savedChampionId) || savedChampionId != championId)
+                        continue;
+                    context.Decks.Remove(deck);
+                    removed.Add((ulong)deck.Id);
+                }
+                return removed;
             });
         }
 

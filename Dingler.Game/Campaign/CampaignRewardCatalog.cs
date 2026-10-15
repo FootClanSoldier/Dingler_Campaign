@@ -112,7 +112,7 @@ public static class CampaignRewardCatalog
                 || rule.Id.Contains(':') || !ids.Add(rule.Id)
                 || rule.Trigger != trigger
                 || rule.ClaimPolicy is not ("OncePerCampaign" or "EveryCompletion")
-                || rule.Evidence is not ("Provisional" or "OriginalVideo")
+                || rule.Evidence is not ("Provisional" or "OriginalVideo" or "CommunityReport")
                 || rule.Grants is null || rule.Grants.Count == 0)
                 throw new InvalidDataException($"Invalid reward rule {owner}:{rule.Id}");
 
@@ -123,13 +123,19 @@ public static class CampaignRewardCatalog
                 switch (grant.Type)
                 {
                     case "XP" or "Gold" when grant.Amount is > 0 && grant.Quantity is null
-                        && grant.CollectionSlot is null:
+                        && grant.CollectionSlot is null && grant.TemplateGuid is null:
                         break;
                     case "CapturedCard" when grant.Quantity == 1 && grant.Amount is null
-                        && grant.CollectionSlot is >= 0 and <= 50004 && captureSlots is not null:
+                        && grant.TemplateGuid is null && grant.CollectionSlot is >= 0 and <= 50004 && captureSlots is not null:
                         if (!captureSlots.Add(grant.CollectionSlot.Value))
                             throw new InvalidDataException($"Duplicate capture collection slot: {grant.CollectionSlot}");
                         capturedGrants++;
+                        break;
+                    case "Card" or "Item" when grant.Quantity is >= 1 and <= 20
+                        && grant.Amount is null && grant.CollectionSlot is null
+                        && Guid.TryParse(grant.TemplateGuid, out var lootGuid)
+                        && lootGuid != Guid.Empty && rule.ClaimPolicy == "OncePerCampaign":
+                        grant.TemplateGuid = lootGuid.ToString("D");
                         break;
                     default:
                         throw new InvalidDataException($"Invalid grant type or fields in {owner}:{rule.Id}: {grant.Type}");
@@ -173,6 +179,7 @@ public sealed class CampaignRewardGrant
     public string Type { get; set; } = string.Empty;
     public int? Amount { get; set; }
     public int? Quantity { get; set; }
+    public string? TemplateGuid { get; set; }
     // Stable per-champion slot for a captured card; keeps existing collection
     // instance IDs independent from rule evaluation and JSON array ordering.
     public int? CollectionSlot { get; set; }

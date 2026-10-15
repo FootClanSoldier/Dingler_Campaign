@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Nodes;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace Dingler.Game.Campaign;
@@ -32,7 +32,7 @@ public sealed class CampaignRunRecord
 
     public JsonObject State { get; set; } = new();
 
-    // Durable one-time receipt keys (encounter GUID + rule ID or quest + rule ID). Capture
-    // receipts store the original captured template GUID for profile collection sync.
+    // One-time reward receipts prevent duplicate XP and repeat grants on reconnect.
     public Dictionary<string, string> RewardClaims { get; set; } = new();
+
 }

@@ -6,6 +6,7 @@ using HexGame::Game.Shared.Network;
 using HexGame::Game.Shared.Resources;
 using HexGame::Reckoning.Game;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Dingler.Game.Campaign;
 using Dingler.Server;
 using Dingler.Server.Abstractions;
@@ -13,6 +14,7 @@ using Dingler.Data.Entities.GameData;
 using Dingler.Game.Domain;
 using HexGame::Game.Shared.Network.Profile;
 using HexGame::Game.Shared.Profile;
+using HexGame::Reckoning.Profile.Messages;
 
 namespace Dingler.Game.Services
 {
@@ -23,7 +25,8 @@ namespace Dingler.Game.Services
         private readonly string _path;
         private bool _isInitialized;
         public Dictionary<ulong, ResourceId> CollectionIds { get; set; } = new();
-        private readonly List<card_instance_bits> _baseCardInstances = new();
+        private readonly List<inventory_bits> _baseInventoryInstances = new();
+        private int _testMercenaryCount;
         private readonly Dictionary<(int Race, string Choice), ulong> _shroomRewardIds = new();
         private readonly Dictionary<(int Race, string Encounter, string RuleId, string Template), ulong> _captureRewardIds = new();
 
@@ -82,6 +85,38 @@ namespace Dingler.Game.Services
                 inventoryList.Add(inventoryBits);
             }
 
+            // Supply one copy of each resolvable original mercenary as part of
+            // the existing test collection. Keep other inventory IDs unchanged.
+            if (_campaignOptions is not null)
+            {
+                var mercenaryTemplates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var authoredMercenaries = inventory.Values.OfType<InventoryMercenaryData>()
+                    .Count(static item => item.Type == EInventoryItemType.Mercenaries);
+                foreach (var mercenary in inventory.Values.OfType<InventoryMercenaryData>()
+                    .Where(static item => item.Type == EInventoryItemType.Mercenaries
+                        && item.MercenaryTemplate is not null)
+                    .OrderBy(static item => item.Id.ToString(), StringComparer.Ordinal))
+                {
+                    if (!mercenaryTemplates.Add(mercenary.MercenaryTemplate!.Id.ToString()))
+                        continue;
+
+                    inventoryList.Add(new inventory_bits
+                    {
+                        Id = (ulong)inventoryList.Count + 1,
+                        BoundToProfile = true,
+                        ClaimDate = DateTime.MinValue,
+                        ItemQuantity = 1,
+                        TemplateID = mercenary.Id
+                    });
+                    _testMercenaryCount++;
+                }
+
+                Dingler.Game.Protocol.StaticLogger.LogInformation(
+                    "Campaign test collection: {count}/{total} original mercenary item templates resolved (one copy each)",
+                    _testMercenaryCount, authoredMercenaries);
+            }
+
+            _baseInventoryInstances.AddRange(inventoryList);
             return EncData.Encode(inventoryList);
         }
 
@@ -108,22 +143,19 @@ namespace Dingler.Game.Services
                 }
             }
 
-            _baseCardInstances.AddRange(cardList);
-            // Reserve stable card instance IDs for each race and possible Shroom reward.
-            // Ownership is still per-profile and per-choice.
+            // Reserve popup instance IDs without granting additional owned card instances.
+            var nextDisplayId = (ulong)CollectionIds.Count;
             foreach (var race in Enumerable.Range(1, 8))
             {
                 foreach (var choice in CampaignShroomRewardCatalog.ChoiceIds)
                 {
-                    var id = (ulong)CollectionIds.Count + 1;
+                    var id = ++nextDisplayId;
                     _shroomRewardIds.Add((race, choice), id);
-                    CollectionIds.Add(id, new ResourceId(choice));
                 }
             }
 
-            // Each CapturedCard grant reserves a stable slot from the reward
-            // catalog. Slots 0 and 1 preserve existing Tamed reward instance
-            // IDs; adding another rule never shifts previously issued IDs.
+            // Each CapturedCard popup grant uses a stable, non-owned instance ID.
+            // Slots 0 and 1 preserve previous Tamed popup IDs.
             foreach (var capture in CampaignRewardCatalog.CaptureRewards)
             {
                 var templates = capture.TemplateGuids
@@ -144,7 +176,6 @@ namespace Dingler.Game.Services
                         var template = templates[i];
                         _captureRewardIds.Add((race, capture.EncounterGuid.ToLowerInvariant(),
                             capture.RuleId.ToLowerInvariant(), template), id);
-                        CollectionIds.Add(id, new ResourceId(template));
                     }
                 }
             }
@@ -163,26 +194,32 @@ namespace Dingler.Game.Services
         public bool TryGetCaptureRewardInstanceId(int race, string encounter, string ruleId, string template, out ulong instanceId) =>
             _captureRewardIds.TryGetValue((race, encounter.ToLowerInvariant(), ruleId.ToLowerInvariant(), template.ToLowerInvariant()), out instanceId);
 
-        private byte[] ProfileCardCollection(ulong profileId)
+        /// <summary>Verify a card/item template before displaying a campaign reward.</summary>
+        public bool IsKnownCampaignLootTemplate(string kind, string guid)
         {
-            if (_campaignRunStore is null)
-                return Cards;
-            var earned = _campaignRunStore.GetProfileShroomRewards(profileId);
-            var captures = _campaignRunStore.GetProfileCaptureRewards(profileId);
-            if (earned.Count == 0 && captures.Count == 0)
-                return Cards;
-            var cards = new List<card_instance_bits>(_baseCardInstances);
-            foreach (var (race, choice) in earned)
+            if (!Guid.TryParse(guid, out var id) || id == Guid.Empty)
+                return false;
+            var manager = HexGame::Singleton<TemplateManager>.Instance;
+            var templateId = new ResourceId(id.ToString("D"));
+            return kind switch
             {
-                if (TryGetShroomRewardInstanceId(race, choice, out var id))
-                    cards.Add(new card_instance_bits { Id = id, TemplateID = new ResourceId(choice) });
-            }
-            foreach (var (race, encounter, ruleId, template) in captures)
-            {
-                if (TryGetCaptureRewardInstanceId(race, encounter, ruleId, template, out var id))
-                    cards.Add(new card_instance_bits { Id = id, TemplateID = new ResourceId(template) });
-            }
-            return EncData.Encode(new card_collection { Cards = cards });
+                "Card" => manager.Cards.TryGetValue(templateId, out var card) && card.IsOwnable(),
+                "Item" => manager.InventoryItems.TryGetValue(templateId, out var item)
+                    && !string.IsNullOrEmpty(item.m_TexturePath),
+                _ => false,
+            };
+        }
+
+        /// <summary>Only a mercenary supplied by the test inventory may enter a party.</summary>
+        public bool IsOwnedMercenary(ulong profileId, ResourceId itemTemplate)
+        {
+            var manager = HexGame::Singleton<TemplateManager>.Instance;
+            if (!manager.InventoryItems.TryGetValue(itemTemplate, out var item)
+                || item is not InventoryMercenaryData mercenary
+                || mercenary.MercenaryTemplate is null)
+                return false;
+
+            return _baseInventoryInstances.Any(bits => bits.TemplateID == itemTemplate);
         }
 
         public async Task SendProfileStreamAsync(SessionContext context, Task<List<Deck>> deckTask,
@@ -319,7 +356,7 @@ namespace Dingler.Game.Services
                 EncData.Encode(identity),
                 EncData.Encode(keep),
                 EncData.Encode(reckoningBits),
-                ProfileCardCollection(profileId),
+                Cards,
                 Inventory
             ];
             
@@ -328,19 +365,61 @@ namespace Dingler.Game.Services
                 encodedData.Add(EncData.Encode(deck));
             }
 
-            // Frost Ring Arena account flags (step 5): the client takes a List<FlagData> chunk as its whole flag list
-            // (PlayerProfile.HandleProfileStream). Sent only when the player has some, so other profiles are unchanged.
+            // The client replaces its flag set when it receives a List<FlagData>.
+            // Merge the campaign test party entitlement with earned arena flags.
+            var profileFlags = new List<FlagData>();
             if (_arenaRunStore?.GetFlags(profileId) is { Count: > 0 } arenaFlags)
+                profileFlags.AddRange(Dingler.Game.Arena.ArenaAccount.ToFlagData(arenaFlags));
+
+            if (_campaignOptions is not null && _testMercenaryCount > 0)
+            {
+                profileFlags.Add(new FlagData
+                {
+                    Name = BuiltInResources.AccountFlag.CAMP_PARTYCAP,
+                    Progress = 3,
+                    Maximum = 3,
+                    Completed = true
+                });
+            }
+
+            if (profileFlags.Count > 0)
             {
                 try
                 {
-                    encodedData.Add(EncData.Encode(Dingler.Game.Arena.ArenaAccount.ToFlagData(arenaFlags)));
+                    encodedData.Add(EncData.Encode(profileFlags));
                 }
                 catch (Exception ex)
                 {
-                    Dingler.Game.Protocol.StaticLogger.LogError("Arena: encoding the account flags failed ({error}); login goes on without them", ex.Message);
+                    Dingler.Game.Protocol.StaticLogger.LogError(
+                        "Profile: encoding the account flags failed ({error}); login goes on without them", ex.Message);
                 }
             }
+
+            // Native profile-deck templates must be available before the party references them.
+            if (_campaignRunStore is not null)
+            {
+                var profileDecks = _campaignRunStore.GetProfileDecks(profileId)
+                    .Select(deck => new SavedProfileDeckTemplate
+                    {
+                        Id = deck.Id,
+                        Name = deck.Name,
+                        Comp = false,
+                        Data = deck.Data,
+                    }).ToList();
+                if (profileDecks.Count > 0)
+                    encodedData.Add(EncData.Encode(profileDecks));
+            }
+
+            // Native profile stream resumes each saved party without replaying acquisition rewards.
+            var savedParties = ownedChampions
+                .Where(static champion => champion.PartyMembers is { Count: > 0 })
+                .Select(champion => CampaignService.BuildNativeParty(champion.ChampionId, accountId,
+                    champion.PartyMembers.Where(member => Guid.TryParse(member.MercenaryItemGuid, out var guid)
+                        && IsOwnedMercenary(profileId, new ResourceId(guid.ToString("D")))).ToArray()))
+                .Where(static party => party.Members.Count > 0)
+                .ToList();
+            if (savedParties.Count > 0)
+                encodedData.Add(EncData.Encode(savedParties));
 
             List<Task> tasks = new();
             for (int i = 0; i < encodedData.Count; i++)

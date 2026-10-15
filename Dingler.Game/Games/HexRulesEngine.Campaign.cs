@@ -19,13 +19,16 @@ public sealed partial class HexRulesEngine
     private champion_bits? _campaignChampion;
     private deck_bits? _campaignDeck;
     private string? _campaignKeepName;
+    private List<ResourceId> _campaignParty = new();
 
-    internal void ConfigureCampaignPlayer(UID humanId, champion_bits champion, deck_bits deck, string keepName)
+    internal void ConfigureCampaignPlayer(UID humanId, champion_bits champion, deck_bits deck,
+        IReadOnlyList<ResourceId> party, string keepName)
     {
         _campaignHumanId = humanId;
         _campaignChampion = champion;
         _campaignDeck = deck;
         _campaignKeepName = keepName;
+        _campaignParty = party.ToList();
     }
 
     internal bool TryGetCampaignDeckAndChampInfo(
@@ -50,7 +53,7 @@ public sealed partial class HexRulesEngine
         deck = _campaignDeck;
         keepName = _campaignKeepName ?? string.Empty;
         dungeonIntTacData = new Dictionary<string, int>();
-        partyMembers = new List<ResourceId>();
+        partyMembers = _campaignParty.ToList();
         _logger?.LogInformation(
             "Campaign engine {Session}: original PvE initializer requested champion {Champion} and deck {Deck}",
             m_SessionId, champ.Id, deck.Id);

@@ -1,4 +1,4 @@
-﻿extern alias HexGame;
+extern alias HexGame;
 
 using HexGame::Game.Shared.Domain;
 
@@ -16,6 +16,7 @@ namespace Dingler.Server
         public ulong AccountId { get; set; }
         public ulong ProfileId { get; set; }
         public ulong CurrentTournamentId { get; set; }
+        public ulong CurrentCampaignChampionId { get; set; }
         public int CurrentMessageCount { get; set; }
         public DinglerEncoder Encoder { get; }
 

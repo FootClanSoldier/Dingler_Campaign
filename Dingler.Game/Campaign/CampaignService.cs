@@ -1,12 +1,15 @@
 extern alias HexGame;
 
 using System.Text.Json;
+using System.Text;
+using HexGame::Game.Shared.Network.HConnect;
 using System.Text.Json.Nodes;
 using Dingler.Server;
 using Dingler.Game.Services;
 using Microsoft.Extensions.Logging;
 using HexGame::Game.Shared;
 using HexGame::Game.Shared.Campaign.Messages;
+using HexGame::Reckoning.Game;
 
 namespace Dingler.Game.Campaign;
 
@@ -38,6 +41,12 @@ public sealed class CampaignService
         using var document = JsonDocument.Parse(envelope is { Length: > 0 } ? envelope : "{}"u8.ToArray());
         var root = document.RootElement;
         var requestType = String(root, "RequestType");
+        TrackDeckEditingChampion(context, root, requestType);
+        if (requestType == "partysave")
+            return SaveParty(context, root);
+        if (requestType == "partyload")
+            return LoadParties(context, root);
+
         if (requestType == "locaction")
             _logger?.LogDebug("Campaign: {user} request {request}", context.UserName, requestType);
         else
@@ -58,6 +67,145 @@ public sealed class CampaignService
         };
 
         return JsonSerializer.SerializeToUtf8Bytes(response);
+    }
+
+    // Profile-deck saves do not carry a champion ID. Remember the last authenticated
+    // campaign character selected by the client so shared templates are not overwritten.
+    private void TrackDeckEditingChampion(SessionContext context, JsonElement root, string requestType)
+    {
+        if (requestType is "qcur4champ" or "getactive" or "createcamp")
+        {
+            var championId = ULong(root, "ChampID");
+            if (championId != 0 && _store.TryGetOwnedChampion(context.ProfileId, championId, out _))
+                context.CurrentCampaignChampionId = championId;
+        }
+        else if (requestType is "getcampstate" or "getcampsum" or "startcamp" or "locaction" or "sendevent" or "forfeit")
+        {
+            foreach (var campaignId in CampaignIds(root))
+            {
+                if (!TryGetOwnedCampaign(context.ProfileId, campaignId, out var campaign))
+                    continue;
+                context.CurrentCampaignChampionId = campaign.ChampionId;
+                break;
+            }
+        }
+    }
+
+    private byte[] SaveParty(SessionContext context, JsonElement root)
+    {
+        if (!root.TryGetProperty("Party", out var payload) || payload.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("Party is required");
+
+        CampSysGeneral.Party.ChampionParty? requested = null;
+        Utils.DeserializeJson(Encoding.UTF8.GetBytes(payload.GetRawText()),
+            (CampSysGeneral.Party.ChampionParty value) => requested = value);
+        if (requested is null || requested.ChampionID == 0 || requested.PlayerId != context.AccountId
+            || !_store.TryGetOwnedChampion(context.ProfileId, requested.ChampionID, out var champion))
+            throw new InvalidOperationException("Champion party owner does not match the authenticated profile");
+
+        // Native selector capacity; actual unlocked slots and item acquisition remain authored campaign rules.
+        var maxParty = champion.Race == 1 ? 4 : 3;
+        if (requested.Members is null || requested.Members.Count > maxParty)
+            throw new InvalidOperationException("Champion party exceeds the selector capacity");
+
+        var seenMercenaries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var members = new List<CampaignMercenaryPartyMember>();
+        foreach (var member in requested.Members)
+        {
+            var itemGuid = member.Mercenary.ToString();
+            if (!Guid.TryParse(itemGuid, out var parsed) || parsed == Guid.Empty
+                || !_collection.IsOwnedMercenary(context.ProfileId, member.Mercenary)
+                || !seenMercenaries.Add(parsed.ToString("D"))
+                || member.Upgrade != 0)
+                throw new InvalidOperationException("Party contains an invalid, duplicated or unowned mercenary");
+
+            if (member.DeckTemplate != 0)
+            {
+                var mercItem = HexGame::Singleton<TemplateManager>.Instance.GetInventoryItem(member.Mercenary)
+                    as InventoryMercenaryData;
+                if (mercItem?.MercenaryTemplate is null
+                    || !_store.TryGetProfileDeck(context.ProfileId, member.DeckTemplate, out var storedDeck)
+                    || !string.Equals(storedDeck.ChampionTemplateGuid,
+                        mercItem.MercenaryTemplate.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Party member's deck does not match its owned mercenary");
+            }
+
+            members.Add(new CampaignMercenaryPartyMember
+            {
+                MercenaryItemGuid = parsed.ToString("D"),
+                DeckTemplateId = member.DeckTemplate,
+                Upgrade = 0,
+            });
+        }
+
+        if (!_store.TrySaveChampionParty(context.ProfileId, champion.ChampionId, members)
+            || !_store.TryGetOwnedChampion(context.ProfileId, champion.ChampionId, out var updated))
+            throw new InvalidOperationException("Unable to save champion party");
+
+        context.CurrentCampaignChampionId = champion.ChampionId;
+        _logger?.LogInformation("Campaign: saved {count} mercenary party member(s) for champion {champion}",
+            updated.PartyMembers.Count, champion.ChampionId);
+        return SerializeParty(BuildNativeParty(champion.ChampionId, context.AccountId, updated.PartyMembers));
+    }
+
+    private byte[] LoadParties(SessionContext context, JsonElement root)
+    {
+        if (ULong(root, "PlayerId") != context.AccountId)
+            throw new InvalidOperationException("Party load profile does not match the authenticated profile");
+
+        var parties = new List<CampSysGeneral.Party.ChampionParty>();
+        if (root.TryGetProperty("Champs", out var ids) && ids.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var id in ids.EnumerateArray())
+            {
+                if (!ulong.TryParse(id.ToString(), out var championId)
+                    || !_store.TryGetOwnedChampion(context.ProfileId, championId, out var champion))
+                    continue;
+                var owned = champion.PartyMembers.Where(member =>
+                    Guid.TryParse(member.MercenaryItemGuid, out var mercId)
+                    && _collection.IsOwnedMercenary(context.ProfileId, new ResourceId(mercId.ToString("D"))))
+                    .ToArray();
+                parties.Add(BuildNativeParty(champion.ChampionId, context.AccountId, owned));
+            }
+        }
+        return SerializeParty(parties);
+    }
+
+    internal static CampSysGeneral.Party.ChampionParty BuildNativeParty(ulong championId, ulong profileId,
+        IReadOnlyList<CampaignMercenaryPartyMember>? members)
+    {
+        var party = new CampSysGeneral.Party.ChampionParty
+        {
+            Id = championId,
+            ChampionID = championId,
+            PlayerId = profileId,
+        };
+        foreach (var member in members ?? Array.Empty<CampaignMercenaryPartyMember>())
+        {
+            if (!Guid.TryParse(member.MercenaryItemGuid, out var id) || id == Guid.Empty)
+                continue;
+            party.Members.Add(new CampSysGeneral.Party.ChampionParty.ChampionPartyMember
+            {
+                Mercenary = new ResourceId(id.ToString("D")),
+                DeckTemplate = member.DeckTemplateId,
+                Upgrade = member.Upgrade,
+            });
+        }
+        return party;
+    }
+
+    private static byte[] SerializeParty(CampSysGeneral.Party.ChampionParty response)
+    {
+        byte[]? envelope = null;
+        Utils.SerializeJson(response, (byte[] data) => envelope = data);
+        return envelope ?? throw new InvalidOperationException("Unable to encode champion party");
+    }
+
+    private static byte[] SerializeParty(List<CampSysGeneral.Party.ChampionParty> response)
+    {
+        byte[]? envelope = null;
+        Utils.SerializeJson(response, (byte[] data) => envelope = data);
+        return envelope ?? throw new InvalidOperationException("Unable to encode champion party list");
     }
 
     private bool TryGetChampionRace(ulong profileId, ulong championId, out int race)
@@ -456,6 +604,8 @@ public sealed class CampaignService
         }
         else if (eventName == "start")
         {
+            if (!TrySetBattleMercenary(context, record, root, out var error))
+                return CampaignStateFactory.BuildFailure(record.CampaignId, error);
             QueueGameStarted(context, record);
         }
         return CampaignStateFactory.BuildInputResponse(record);
@@ -607,18 +757,16 @@ public sealed class CampaignService
         if (string.Equals(record.CampaignType, "AREA", StringComparison.OrdinalIgnoreCase))
             TraceAz1Map(record, true);
 
-        // Evaluate independent victory and conditional capture reward rules.
-        // Gold/XP remain display-only until shared progression services
-        // support actual currency and champion XP grants.
+        // Persist one-time claims and awarded champion XP. All other grants are display-only.
         var applied = _rewards.Apply(record, encounterGuid, won, capturedTemplates,
             (encounter, ruleId, template) =>
                 _collection.TryGetCaptureRewardInstanceId(record.Race, encounter, ruleId, template, out var id)
                     ? id : null,
-            out var rewardSummary);
-        _store.Save(record);
+            _collection.IsKnownCampaignLootTemplate, out var rewardSummary);
+        _store.Save(record, applied);
         if (won)
             _logger?.LogInformation(
-                "Campaign: reward encounter={encounter} camp={campaign}: {summary}; XP/Gold display-only",
+                "Campaign: reward encounter={encounter} camp={campaign}: {summary}; Gold display-only",
                 encounterGuid, record.CampaignId, rewardSummary);
 
         var notifyEnvelope = new JsonObject
@@ -898,6 +1046,61 @@ public sealed class CampaignService
     private static int StateInt(JsonObject state, string name) =>
         int.TryParse(state[name]?.ToString(), out var value) ? value : 0;
 
+
+    /// <summary>Validate the original merc=inventory-item selection before a battle is queued.</summary>
+    private bool TrySetBattleMercenary(SessionContext context, CampaignRunRecord record,
+        JsonElement request, out string error)
+    {
+        error = string.Empty;
+        record.State.Remove("BattleMercenaryItem");
+        if (!request.TryGetProperty("OParms", out var parameters)
+            || parameters.ValueKind != JsonValueKind.Array)
+            return true;
+
+        string? choice = null;
+        foreach (var value in parameters.EnumerateArray())
+        {
+            if (value.ValueKind == JsonValueKind.String
+                && value.GetString() is { } text && text.StartsWith("merc=", StringComparison.Ordinal))
+            {
+                choice = text[5..];
+                break;
+            }
+        }
+        if (choice is null)
+            return true;
+        if (!Guid.TryParse(choice, out var selected))
+        {
+            error = "Invalid mercenary selection";
+            return false;
+        }
+        if (selected == Guid.Empty)
+            return true;
+
+        if (!_store.TryGetOwnedChampion(context.ProfileId, record.ChampionId, out var champion)
+            || !champion.PartyMembers.Any(member => Guid.TryParse(member.MercenaryItemGuid, out var id)
+                && id == selected)
+            || !_collection.IsOwnedMercenary(context.ProfileId, new ResourceId(selected.ToString("D"))))
+        {
+            error = "Selected mercenary is not in the champion party";
+            return false;
+        }
+        var item = HexGame::Singleton<TemplateManager>.Instance.GetInventoryItem(new ResourceId(selected.ToString("D")))
+            as InventoryMercenaryData;
+        var assigned = champion.PartyMembers.First(member =>
+            Guid.TryParse(member.MercenaryItemGuid, out var id) && id == selected);
+        if (item?.MercenaryTemplate is null || assigned.DeckTemplateId == 0
+            || !_store.TryGetProfileDeck(context.ProfileId, assigned.DeckTemplateId, out var savedDeck)
+            || !string.Equals(savedDeck.ChampionTemplateGuid,
+                item.MercenaryTemplate.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Selected mercenary needs a saved matching mercenary deck";
+            return false;
+        }
+
+        record.State["BattleMercenaryItem"] = selected.ToString("D");
+        return true;
+    }
 
     private void QueueGameStarted(SessionContext context, CampaignRunRecord record)
     {
@@ -1339,17 +1542,19 @@ public sealed class CampaignService
                     CampaignCrayburnConfig.QuestScriptName,
                     quest => CrayburnQuestReadyForReport(quest, reportConversation),
                     panorama => CrayburnPanoramaReadyForReport(panorama, cfg.QuestNpc, reportConversation),
-                    quest =>
+                    (quest, champion) =>
                     {
                         FinishCrayburnQuest(quest);
-                        questRewards = _rewards.ApplyQuestCompletion(quest, out rewardSummary);
+                        questRewards = _rewards.ApplyQuestCompletion(quest,
+                            _collection.IsKnownCampaignLootTemplate, out rewardSummary);
+                        CampaignChampionProgression.ApplyGrantedXp(champion, questRewards);
                     },
                     panorama => FinishCrayburnReportPanorama(panorama, cfg));
                 if (turnIn is not null)
                 {
                     QueueCrayburnQuestTurnIn(context, turnIn, questRewards);
                     _logger?.LogInformation(
-                        "Campaign: reward quest={quest} camp={campaign}: {summary}; XP/Gold display-only",
+                        "Campaign: reward quest={quest} camp={campaign}: {summary}; Gold display-only",
                         turnIn.Quest.TemplateName, turnIn.Quest.CampaignId, rewardSummary);
                     _logger?.LogInformation(
                         "Campaign: Crayburn report conversation {conversation} completed; quest={quest} Step2 finished; panorama={panorama} quest giver={npc}; travel npc={travelNpc} conversation={travelConversation}",

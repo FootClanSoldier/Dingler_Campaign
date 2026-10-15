@@ -31,7 +31,7 @@ public sealed record CampaignAreaTravelResult(
 /// A champion owns deck/talent selection once while PANORAMA, QUEST, DUNGEON and AREA
 /// remain independent campaign instances with stable CampID values.
 /// </summary>
-public sealed class CampaignRunStore
+public sealed partial class CampaignRunStore
 {
     private const int CurrentFormatVersion = 3;
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
@@ -62,6 +62,44 @@ public sealed class CampaignRunStore
         lock (_gate)
         {
             var saved = LoadCachedLocked(profileId, championId);
+            if (saved is { IsPlayerCreated: true, IsDeleted: false } && saved.ProfileId == profileId)
+            {
+                champion = saved;
+                return true;
+            }
+            champion = null!;
+            return false;
+        }
+    }
+
+    /// <summary>Replace a created champion's party as one persisted aggregate update.</summary>
+    public bool TrySaveChampionParty(ulong profileId, ulong championId,
+        IReadOnlyList<CampaignMercenaryPartyMember> members)
+    {
+        lock (_gate)
+        {
+            var champion = LoadCachedLocked(profileId, championId);
+            if (champion is not { IsPlayerCreated: true, IsDeleted: false } || champion.ProfileId != profileId)
+                return false;
+            // Profile decks belong to the account. A champion's party stores its own
+            // selected template ID; copying is deferred until a shared deck is edited.
+            champion.PartyMembers = members.Select(member => new CampaignMercenaryPartyMember
+            {
+                MercenaryItemGuid = member.MercenaryItemGuid,
+                DeckTemplateId = member.DeckTemplateId,
+                Upgrade = member.Upgrade,
+            }).ToList();
+            SaveLocked(champion);
+            return true;
+        }
+    }
+
+    /// <summary>Allow resuming an interrupted deletion without reactivating the champion.</summary>
+    public bool TryGetChampionForDeletion(ulong profileId, ulong championId, out CampaignChampionRun champion)
+    {
+        lock (_gate)
+        {
+            var saved = LoadCachedLocked(profileId, championId);
             if (saved is { IsPlayerCreated: true } && saved.ProfileId == profileId)
             {
                 champion = saved;
@@ -69,6 +107,50 @@ public sealed class CampaignRunStore
             }
             champion = null!;
             return false;
+        }
+    }
+
+    /// <summary>Hide a champion until its deck cleanup and file removal finish.</summary>
+    public bool TryDeleteChampion(ulong profileId, ulong championId, out CampaignChampionRun deleted)
+    {
+        lock (_gate)
+        {
+            var champion = LoadCachedLocked(profileId, championId);
+            if (champion is not { IsPlayerCreated: true } || champion.ProfileId != profileId)
+            {
+                deleted = null!;
+                return false;
+            }
+            if (champion.IsDeleted)
+            {
+                deleted = champion;
+                return true;
+            }
+            champion.IsDeleted = true;
+            try
+            {
+                SaveLocked(champion);
+            }
+            catch
+            {
+                champion.IsDeleted = false;
+                throw;
+            }
+            deleted = champion;
+            return true;
+        }
+    }
+
+    /// <summary>Finish a deletion after all owned-deck cleanup has succeeded.</summary>
+    public void PermanentlyDeleteChampion(ulong profileId, ulong championId)
+    {
+        lock (_gate)
+        {
+            var champion = LoadCachedLocked(profileId, championId);
+            if (champion is not { IsPlayerCreated: true, IsDeleted: true } || champion.ProfileId != profileId)
+                throw new InvalidOperationException("Champion deletion has not been prepared");
+            File.Delete(PathFor(profileId, championId));
+            _cache.Remove((profileId, championId));
         }
     }
 
@@ -141,9 +223,10 @@ public sealed class CampaignRunStore
     private List<CampaignChampionRun> EnumerateCreatedLocked(ulong profileId)
     {
         var result = new List<CampaignChampionRun>();
-        if (!Directory.Exists(_folder))
+        var folder = ProfileFolder(profileId);
+        if (!Directory.Exists(folder))
             return result;
-        foreach (var path in Directory.EnumerateFiles(_folder, $"campaign-{profileId}-*.json"))
+        foreach (var path in Directory.EnumerateFiles(folder, $"campaign-{profileId}-*.json"))
         {
             // Avoid migrating/rewriting the dormant legacy saves merely to list heroes.
             try
@@ -156,7 +239,7 @@ public sealed class CampaignRunStore
                     !idValue.TryGetUInt64(out var id))
                     continue;
                 var champion = LoadCachedLocked(profileId, id);
-                if (champion is { IsPlayerCreated: true } && champion.ProfileId == profileId)
+                if (champion is { IsPlayerCreated: true, IsDeleted: false } && champion.ProfileId == profileId)
                     result.Add(champion);
             }
             catch (Exception ex)
@@ -181,7 +264,7 @@ public sealed class CampaignRunStore
         lock (_gate)
         {
             var champion = LoadCachedLocked(profileId, championId);
-            if (champion is null)
+            if (champion is null || champion.IsDeleted)
             {
                 record = null!;
                 return false;
@@ -237,7 +320,7 @@ public sealed class CampaignRunStore
         {
             foreach (var champion in _cache.Values)
             {
-                if (champion is null || champion.ProfileId != profileId)
+                if (champion is null || champion.IsDeleted || champion.ProfileId != profileId)
                     continue;
 
                 var cached = champion.Campaigns.FirstOrDefault(candidate => candidate.CampaignId == campaignId);
@@ -249,12 +332,13 @@ public sealed class CampaignRunStore
                 }
             }
 
-            if (Directory.Exists(_folder))
+            var folder = ProfileFolder(profileId);
+            if (Directory.Exists(folder))
             {
-                foreach (var path in Directory.EnumerateFiles(_folder, $"campaign-{profileId}-*.json"))
+                foreach (var path in Directory.EnumerateFiles(folder, $"campaign-{profileId}-*.json"))
                 {
                     var loaded = LoadPathLocked(path);
-                    if (loaded is null)
+                    if (loaded is null || loaded.IsDeleted || loaded.ProfileId != profileId)
                         continue;
 
                     _cache[(loaded.ProfileId, loaded.ChampionId)] = loaded;
@@ -289,9 +373,9 @@ public sealed class CampaignRunStore
         lock (_gate)
         {
             var champion = LoadCachedLocked(profileId, championId);
-            var found = champion?.Campaigns.FirstOrDefault(record =>
+            var found = champion is { IsDeleted: false } ? champion.Campaigns.FirstOrDefault(record =>
                 string.Equals(record.CampaignType, "QUEST", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(record.TemplateName, script, StringComparison.OrdinalIgnoreCase));
+                && string.Equals(record.TemplateName, script, StringComparison.OrdinalIgnoreCase)) : null;
             if (found is null)
             {
                 quest = null!;
@@ -303,13 +387,13 @@ public sealed class CampaignRunStore
         }
     }
 
-    public void Save(CampaignRunRecord record)
+    public void Save(CampaignRunRecord record, JsonObject? appliedRewards = null)
     {
         lock (_gate)
         {
             var champion = LoadCachedLocked(record.ProfileId, record.ChampionId);
-            if (champion is null)
-                throw new InvalidOperationException($"Campaign owner {record.ProfileId}/{record.ChampionId} is not loaded");
+            if (champion is null || champion.IsDeleted)
+                throw new InvalidOperationException($"Campaign owner {record.ProfileId}/{record.ChampionId} is not active");
 
             var persisted = champion.Campaigns.FirstOrDefault(candidate => candidate.CampaignId == record.CampaignId);
             if (persisted is null)
@@ -322,6 +406,8 @@ public sealed class CampaignRunStore
             }
 
             NormalizeRecordIdentityLocked(champion, record);
+            if (appliedRewards is not null)
+                CampaignChampionProgression.ApplyGrantedXp(champion, appliedRewards);
             SaveLocked(champion);
         }
     }
@@ -339,7 +425,7 @@ public sealed class CampaignRunStore
             var saved = champion?.Campaigns.FirstOrDefault(candidate =>
                 candidate.CampaignId == area.CampaignId && candidate.CampaignType == "AREA"
                 && candidate.TemplateName == CampaignAz1Config.TemplateName);
-            if (saved is null || !CampaignShroomRewardCatalog.IsChoice(choice)
+            if (champion is { IsDeleted: true } || saved is null || !CampaignShroomRewardCatalog.IsChoice(choice)
                 || !string.Equals(saved.State["ALoc"]?.ToString(), CampaignAz1Config.FourthTitle, StringComparison.Ordinal))
                 return false;
             var location = (saved.State["VisLocs"] as JsonArray)?.OfType<JsonObject>()
@@ -366,82 +452,6 @@ public sealed class CampaignRunStore
         }
     }
 
-    /// <summary>
-    /// Read already claimed AREA rewards for a profile without creating new
-    /// champions or mutating campaign progress during the profile stream.
-    /// </summary>
-    public IReadOnlyList<(int Race, string Choice)> GetProfileShroomRewards(ulong profileId)
-    {
-        lock (_gate)
-        {
-            var result = new List<(int Race, string Choice)>();
-            if (!Directory.Exists(_folder))
-                return result;
-            foreach (var path in Directory.EnumerateFiles(_folder, $"campaign-{profileId}-*.json"))
-            {
-                var owner = LoadPathLocked(path);
-                if (owner is null || owner.ProfileId != profileId || owner.Race is < 1 or > 8)
-                    continue;
-                foreach (var area in owner.Campaigns.Where(record =>
-                             record.CampaignType == "AREA" && record.TemplateName == CampaignAz1Config.TemplateName))
-                {
-                    var location = (area.State["VisLocs"] as JsonArray)?.OfType<JsonObject>()
-                        .Select(static loc => loc["Data"] as JsonObject)
-                        .FirstOrDefault(loc => loc?["node"]?.ToString() == CampaignAz1Config.FourthNode);
-                    var choice = location?["shroom_reward_choice"]?.ToString();
-                    if (location?["completed"]?.GetValue<bool>() == true && CampaignShroomRewardCatalog.IsChoice(choice))
-                        result.Add((owner.Race, choice!));
-                }
-            }
-            return result;
-        }
-    }
-
-    /// <summary>
-    /// Profile projection of cards earned from native TamedCards receipts.
-    /// These receipts are separate from the victory currency display and
-    /// survive login without replaying game-end notifications.
-    /// </summary>
-    public IReadOnlyList<(int Race, string Encounter, string RuleId, string Template)> GetProfileCaptureRewards(ulong profileId)
-    {
-        lock (_gate)
-        {
-            var result = new List<(int Race, string Encounter, string RuleId, string Template)>();
-            if (!Directory.Exists(_folder))
-                return result;
-            foreach (var path in Directory.EnumerateFiles(_folder, $"campaign-{profileId}-*.json"))
-            {
-                var owner = LoadPathLocked(path);
-                if (owner is null || owner.ProfileId != profileId || owner.Race is < 1 or > 8)
-                    continue;
-                foreach (var run in owner.Campaigns)
-                {
-                    if (run.RewardClaims is null)
-                        continue;
-                    foreach (var (claim, template) in run.RewardClaims)
-                    {
-                        var separator = claim.IndexOf(':');
-                        if (separator < 0 || !Guid.TryParse(claim[..separator], out var encounterId)
-                            || !Guid.TryParse(template, out var templateId))
-                            continue;
-                        var encounter = encounterId.ToString("D");
-                        var ruleId = claim[(separator + 1)..];
-                        if (!CampaignRewardCatalog.TryGet(encounter, out var entry))
-                            continue;
-                        var reward = entry.Rewards.FirstOrDefault(rule =>
-                            string.Equals(rule.Id, ruleId, StringComparison.OrdinalIgnoreCase)
-                            && rule.Grants.Any(grant => grant.Type == "CapturedCard"));
-                        if (reward is null || !CampaignRewardConditionEvaluator.CaptureTemplateGuids(reward.Conditions)
-                            .Contains(templateId.ToString("D"), StringComparer.OrdinalIgnoreCase))
-                            continue;
-                        result.Add((owner.Race, encounter, reward.Id, templateId.ToString("D")));
-                    }
-                }
-            }
-            return result.Distinct().ToArray();
-        }
-    }
-
     public void SetRace(ulong profileId, ulong championId, int race)
     {
         if (race is < 1 or > 8)
@@ -450,7 +460,7 @@ public sealed class CampaignRunStore
         lock (_gate)
         {
             var champion = LoadCachedLocked(profileId, championId);
-            if (champion is null)
+            if (champion is null || champion.IsDeleted)
                 return;
             champion.Race = race;
             SaveLocked(champion);
@@ -606,7 +616,7 @@ public sealed class CampaignRunStore
         string questTemplateName,
         Func<CampaignRunRecord, bool> questReady,
         Func<CampaignRunRecord, bool> panoramaReady,
-        Action<CampaignRunRecord> finishQuest,
+        Action<CampaignRunRecord, CampaignChampionRun> finishQuest,
         Action<CampaignRunRecord> finishPanorama)
     {
         lock (_gate)
@@ -623,7 +633,7 @@ public sealed class CampaignRunStore
                 || !panoramaReady(persistedPanorama) || !questReady(quest))
                 return null;
 
-            finishQuest(quest);
+            finishQuest(quest, champion);
             finishPanorama(persistedPanorama);
             NormalizeRecordIdentityLocked(champion, quest);
             NormalizeRecordIdentityLocked(champion, persistedPanorama);
@@ -645,7 +655,7 @@ public sealed class CampaignRunStore
         lock (_gate)
         {
             var champion = LoadCachedLocked(panorama.ProfileId, panorama.ChampionId);
-            if (champion is null || champion.CurrentCampaignId != panorama.CampaignId)
+            if (champion is null || champion.IsDeleted || champion.CurrentCampaignId != panorama.CampaignId)
                 return null;
 
             var source = champion.Campaigns.FirstOrDefault(record =>
@@ -713,7 +723,7 @@ public sealed class CampaignRunStore
         lock (_gate)
         {
             var champion = LoadCachedLocked(area.ProfileId, area.ChampionId);
-            if (champion is null || champion.CurrentCampaignId != area.CampaignId)
+            if (champion is null || champion.IsDeleted || champion.CurrentCampaignId != area.CampaignId)
                 return Array.Empty<CampaignRunRecord>();
             var persisted = champion.Campaigns.FirstOrDefault(item => item.CampaignId == area.CampaignId
                 && string.Equals(item.CampaignType, "AREA", StringComparison.OrdinalIgnoreCase)
@@ -768,6 +778,8 @@ public sealed class CampaignRunStore
     private CampaignChampionRun GetOrCreateChampionLocked(ulong profileId, ulong championId, int race)
     {
         var champion = LoadCachedLocked(profileId, championId);
+        if (champion is { IsDeleted: true })
+            throw new InvalidOperationException("Deleted campaign champion cannot be reactivated");
         if (champion is not null)
             return champion;
 
@@ -884,7 +896,7 @@ public sealed class CampaignRunStore
 
     private void SaveLocked(CampaignChampionRun champion)
     {
-        Directory.CreateDirectory(_folder);
+        Directory.CreateDirectory(ProfileFolder(champion.ProfileId));
         champion.FormatVersion = CurrentFormatVersion;
         AttachOwnerLocked(champion);
         foreach (var record in champion.Campaigns)
@@ -953,6 +965,7 @@ public sealed class CampaignRunStore
 
             champion.Campaigns ??= new List<CampaignRunRecord>();
             champion.ChampionTalents ??= new List<string>();
+            champion.PartyMembers ??= new List<CampaignMercenaryPartyMember>();
             if (champion.Campaigns.Count == 0 || champion.ChampionId == 0)
                 throw new InvalidDataException("campaign aggregate is incomplete");
 
@@ -1114,32 +1127,38 @@ public sealed class CampaignRunStore
         if (!Directory.Exists(_folder))
             return;
 
-        foreach (var path in Directory.EnumerateFiles(_folder, "campaign-*-*.json"))
+        foreach (var profileFolder in Directory.EnumerateDirectories(_folder))
         {
-            try
+            if (!ulong.TryParse(Path.GetFileName(profileFolder), out var profileId))
+                continue;
+
+            foreach (var path in Directory.EnumerateFiles(profileFolder, $"campaign-{profileId}-*.json"))
             {
-                using var document = JsonDocument.Parse(File.ReadAllText(path));
-                var root = document.RootElement;
-                if (root.TryGetProperty("Campaigns", out var campaigns) && campaigns.ValueKind == JsonValueKind.Array)
+                try
                 {
-                    foreach (var campaign in campaigns.EnumerateArray())
+                    using var document = JsonDocument.Parse(File.ReadAllText(path));
+                    var root = document.RootElement;
+                    if (root.TryGetProperty("Campaigns", out var campaigns) && campaigns.ValueKind == JsonValueKind.Array)
                     {
-                        if (campaign.TryGetProperty("CampaignId", out var idElement)
-                            && idElement.TryGetUInt64(out var id)
-                            && id > _lastCampaignId)
-                            _lastCampaignId = id;
+                        foreach (var campaign in campaigns.EnumerateArray())
+                        {
+                            if (campaign.TryGetProperty("CampaignId", out var idElement)
+                                && idElement.TryGetUInt64(out var id)
+                                && id > _lastCampaignId)
+                                _lastCampaignId = id;
+                        }
+                    }
+                    else if (root.TryGetProperty("CampaignId", out var legacyId)
+                             && legacyId.TryGetUInt64(out var id)
+                             && id > _lastCampaignId)
+                    {
+                        _lastCampaignId = id;
                     }
                 }
-                else if (root.TryGetProperty("CampaignId", out var legacyId)
-                         && legacyId.TryGetUInt64(out var id)
-                         && id > _lastCampaignId)
+                catch
                 {
-                    _lastCampaignId = id;
+                    // Normal load will report malformed files if/when the profile opens them.
                 }
-            }
-            catch
-            {
-                // Normal load will report malformed files if/when the profile opens them.
             }
         }
     }
@@ -1151,8 +1170,11 @@ public sealed class CampaignRunStore
         File.Move(tmp, path, overwrite: true);
     }
 
+    private string ProfileFolder(ulong profileId) =>
+        Path.Combine(_folder, profileId.ToString());
+
     private string PathFor(ulong profileId, ulong championId) =>
-        Path.Combine(_folder, $"campaign-{profileId}-{championId}.json");
+        Path.Combine(ProfileFolder(profileId), $"campaign-{profileId}-{championId}.json");
 
     private sealed class LegacyCampaignRunRecord
     {

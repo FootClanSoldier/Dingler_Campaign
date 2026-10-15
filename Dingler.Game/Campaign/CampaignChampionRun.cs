@@ -10,6 +10,7 @@ public sealed class CampaignChampionRun
     public int FormatVersion { get; set; } = 3;
     // A missing marker denotes a pre-existing test/legacy aggregate, never a created character.
     public bool IsPlayerCreated { get; set; }
+    public bool IsDeleted { get; set; }
     public string Name { get; set; } = string.Empty;
     public int ChampionClass { get; set; }
     public int Gender { get; set; }
@@ -17,8 +18,11 @@ public sealed class CampaignChampionRun
     public ulong ProfileId { get; set; }
     public ulong ChampionId { get; set; }
     public int Race { get; set; }
+    public int Level { get; set; } = 1;
+    public int CurrentXP { get; set; }
     public ulong LastDeckId { get; set; }
     public List<string> ChampionTalents { get; set; } = new();
+    public List<CampaignMercenaryPartyMember> PartyMembers { get; set; } = new();
     public ulong CurrentCampaignId { get; set; }
     public List<CampaignRunRecord> Campaigns { get; set; } = new();
 }
