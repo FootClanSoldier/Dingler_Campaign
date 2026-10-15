@@ -5,6 +5,7 @@ using Dingler.Server.Attributes;
 using Dingler.Game.Tournaments;
 using HexGame::Game.Client.Network.Tournaments;
 using HexGame::Game.Shared;
+using HexGame::Game.Shared.Domain;
 using HexGame::Game.Shared.Network.Tournaments;
 
 namespace Dingler.Game.Handlers.Request.Tournament;
@@ -39,8 +40,15 @@ public sealed class EnterTournamentRequestHandler : IAsyncRequestHandler<EnterTo
 
 		if (!_tournamentManager.TryGetRegisterableTournament(tournamentId, out var tournament))
 			return _invalidTournamentError;
-		
-		if (!context.Decks.TryGetValue(request.DeckId.GetInstanceId(), out var deck))
+
+		// This is a bad fix, come back and handle this later.
+		deck_bits? deck;
+
+		if (request.DeckId.GetInstanceId() == 0)
+		{
+			deck = new deck_bits();
+		}
+		else if (!context.Decks.TryGetValue(request.DeckId.GetInstanceId(), out deck))
 			return _invalidDeckError;
 
 		var playerUid = request.PlayerId.IsValid()

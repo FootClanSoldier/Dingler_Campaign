@@ -7,10 +7,10 @@ namespace Dingler.Game.Tournaments;
 public static class PairingGenerator
 {
 	public static List<TournamentPairing> GeneratePairings(List<TournamentPlayerInfo> players, Dictionary<string, deck_bits> decks, int round,
-		ETournamentStyle style)
+		ETournamentStyle style, Dictionary<string, HashSet<string>> previousOpponents)
 	{
 		if (style.HasFlag(ETournamentStyle.Swiss))
-			return GenerateSwissPairings(players, decks);
+			return GenerateSwissPairings(players, decks, previousOpponents);
 
 		return GenerateSingleEliminationPairings(players, decks);
 	}
@@ -34,7 +34,7 @@ public static class PairingGenerator
 		return pairings;
 	}
 
-	private static List<TournamentPairing> GenerateSwissPairings(List<TournamentPlayerInfo> players, Dictionary<string, deck_bits> decks)
+	private static List<TournamentPairing> GenerateSwissPairings(List<TournamentPlayerInfo> players, Dictionary<string, deck_bits> decks, Dictionary<string, HashSet<string>> previousOpponents)
 	{
 		var pairings = new List<TournamentPairing>();
 		var unpaired = players
@@ -49,6 +49,37 @@ public static class PairingGenerator
 		{
 			var player1 = unpaired[0];
 			var player2 = unpaired[1];
+
+			if (!previousOpponents.TryGetValue(player1.Name, out var player1Previous))
+			{
+				player1Previous = new HashSet<string>();
+				previousOpponents[player1.Name] = player1Previous;
+			}
+			
+			if (!previousOpponents.TryGetValue(player2.Name, out var player2Previous))
+			{
+				player2Previous = new HashSet<string>();
+				previousOpponents[player2.Name] = player2Previous;
+			}
+
+			var playerIndex = 2;
+			
+			while (player1Previous.Contains(player2.Name))
+			{
+				if (unpaired.Count <= playerIndex)
+				{
+					// If we can't find a player a hero hasn't played (this should never happen, but edge cases
+					// being what they are...) just fight the best guy again. Not sure how magic handles it but fuck it
+					// this sucks
+					player2 = unpaired[1];
+					break;
+				}
+				player2 = unpaired[playerIndex];
+				playerIndex++;
+			}
+
+			player1Previous.Add(player2.Name);
+			player2Previous.Add(player1.Name);
 			
 			unpaired.Remove(player2);
 			unpaired.RemoveAt(0);

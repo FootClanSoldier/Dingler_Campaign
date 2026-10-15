@@ -44,7 +44,10 @@ public class MatchCommunicator
 	
 	private void OnMatchEnded(TournamentMatch tournamentMatch)
 	{
-		
+		// Send both players back to the tournament lobby to wait for the next round (non-virtual only;
+		// OnPlayerLeftToMainLobby already skips virtual tournaments).
+		foreach (var player in tournamentMatch.GetPlayersInMatch())
+			OnPlayerLeftToMainLobby(tournamentMatch, player);
 	}
 	
 	private void OnGameStarted(TournamentMatch tournamentMatch, HexGameWrapper game)
@@ -94,7 +97,18 @@ public class MatchCommunicator
 
 	private void OnPlayerLeftToMainLobby(TournamentMatch tournamentMatch, string username)
 	{
+		if (tournamentMatch.TournamentInfo.IsVirtual())
+			return;
 		
+		if (!_sessionManager.TryGetUserSession(username, out var context))
+			return;
+
+		var sendToTournamentLobbyEventArgs = new GotoLobbyEventArgs()
+		{
+			TournamentID = tournamentMatch.TournamentInfo.TournamentID
+		};
+
+		context.TrySendMessageToClient(sendToTournamentLobbyEventArgs);
 	}
 
 	private void OnPlayerForfeited(TournamentMatch tournamentMatch, string forfeiter)

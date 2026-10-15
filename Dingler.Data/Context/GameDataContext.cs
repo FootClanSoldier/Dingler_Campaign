@@ -150,6 +150,11 @@ public partial class GameDataContext : DbContext
             entity.HasOne(ds => ds.CardSet)
                 .WithMany(p => p.DraftSets)
                 .HasForeignKey(ds => ds.CardSetId);
+            
+            entity.HasData(
+                new DraftSet { Id = 1, TournamentId = 3, CardSetId = 1, Order = 1 },
+                new DraftSet { Id = 2, TournamentId = 3, CardSetId = 2, Order = 2 },
+                new DraftSet { Id = 3, TournamentId = 3, CardSetId = 2, Order = 3 });
         });
 
         modelBuilder.Entity<DraftCollection>(entity =>
@@ -216,9 +221,20 @@ public partial class GameDataContext : DbContext
                 NeededPlayers = 2,
                 StartDate = DateTime.MinValue,
             };
+            var boosterDraft = new Tournament()
+            {
+                Id = 3,
+                Description = "8-Player Booster Draft",
+                MatchTypeId = 2,
+                StartConditionId = (int)Enums.StartCondition.WhenFull,
+                TournamentTypeId = 1,
+                NeededPlayers = 8,
+                StartDate = DateTime.MinValue,
+            };
             
             entity.HasData(standardOnDemand);
             entity.HasData(immortalOnDemand);
+            entity.HasData(boosterDraft);
         });
 
         modelBuilder.Entity<TournamentType>(entity =>

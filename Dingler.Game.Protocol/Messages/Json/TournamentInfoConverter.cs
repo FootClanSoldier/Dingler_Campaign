@@ -24,8 +24,8 @@ public class TournamentInfoConverter : JsonConverter<TournamentInfo>
 		for (int i = 0; i < value.Players.Count; i++)
 		{
 			var player = value.Players[i];
-			player.PlayerID = (ulong)i;
-			writer.WritePropertyName(i.ToString());
+			player.PlayerID = (ulong)(i + 1);
+			writer.WritePropertyName((i + 1).ToString());
 			JsonSerializer.Serialize(writer, player, options);
 		}
 		writer.WriteEndObject();

@@ -15,7 +15,7 @@ namespace Dingler.Data.Migrations.GameData
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
             modelBuilder.Entity("Dingler.Data.Entities.GameData.Account", b =>
                 {
@@ -187,6 +187,29 @@ namespace Dingler.Data.Migrations.GameData
                     b.HasIndex("TournamentId");
 
                     b.ToTable("DraftSets", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CardSetId = 1,
+                            Order = 1,
+                            TournamentId = 3
+                        },
+                        new
+                        {
+                            Id = 2,
+                            CardSetId = 2,
+                            Order = 2,
+                            TournamentId = 3
+                        },
+                        new
+                        {
+                            Id = 3,
+                            CardSetId = 2,
+                            Order = 3,
+                            TournamentId = 3
+                        });
                 });
 
             modelBuilder.Entity("Dingler.Data.Entities.GameData.Friend", b =>
@@ -454,6 +477,16 @@ namespace Dingler.Data.Migrations.GameData
                             StartConditionId = 1,
                             StartDate = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             TournamentTypeId = 4
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Description = "8-Player Booster Draft",
+                            MatchTypeId = 2,
+                            NeededPlayers = 8,
+                            StartConditionId = 1,
+                            StartDate = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
+                            TournamentTypeId = 1
                         });
                 });
 

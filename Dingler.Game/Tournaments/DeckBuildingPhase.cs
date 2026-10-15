@@ -5,6 +5,8 @@ using Dingler.Server;
 using HexGame::Game.Shared.Domain;
 using HexGame::Game.Shared.Network.Tournaments;
 using HexGame::Game.Shared.Tournaments;
+using HexGame::Game.Shared.TournamentSystemMkII;
+using HexGame::Reckoning.Game;
 using DraftCollectionEntity = Dingler.Data.Entities.GameData.DraftCollection;
 
 namespace Dingler.Game.Tournaments;
@@ -38,6 +40,8 @@ public sealed class DeckBuildingPhase : ITournamentPhase
 		var info = await tournament.GetInfoAsync();
 		var players = info.Players.ToList();
 
+		await tournament.SetAllPlayersAsync(ETournamentPlayerStatus.DeckBuilding, PlayerStates.Deckbuilding);
+
 		lock (_gate)
 		{
 			_accepting = true;
@@ -50,6 +54,13 @@ public sealed class DeckBuildingPhase : ITournamentPhase
 		{
 			var poolDeck = await tournament.ScheduleWork(state =>
 				state.DeckInfo.TryGetValue(player.Name, out var deck) ? deck : new deck_bits());
+
+			// Bots never open the deck builder; give them a playable deck so they can be paired and play (or concede).
+			if (DraftBots.IsBot(player.Name))
+			{
+				SubmitDeck(player.Name, BuildBotDeck(poolDeck, player.PlayerUID.GetInstanceId()));
+				continue;
+			}
 
 			SendTo(player.Name, new DeckConstructionStartedEventArgs(tournament.Id, info, poolDeck,
 				_deckBuildSeconds, player.PlayerUID.GetInstanceId()));
@@ -87,6 +98,8 @@ public sealed class DeckBuildingPhase : ITournamentPhase
 				DeckJson = DraftCollection.SerializeDeck(finalDeck)
 			});
 		}
+
+		await tournament.SetAllPlayersAsync(ETournamentPlayerStatus.WaitingForNewRound, PlayerStates.WaitingForNewRound);
 	}
 
 	public bool SubmitDeck(string username, deck_bits deck)
@@ -103,6 +116,28 @@ public sealed class DeckBuildingPhase : ITournamentPhase
 
 			return true;
 		}
+	}
+
+	private static deck_bits BuildBotDeck(deck_bits poolDeck, ulong profileId)
+	{
+		// A test deck: 40 basic shards and a valid champion. Any valid deck would do; this one is trivial to build.
+		// Note: basic shards gain their threshold via an ability (not m_Threshold), so CardShards is Colorless for
+		// them -- match on IsBasicResource() instead of a shard color.
+		var shards = poolDeck.CardsInSideboard
+			.Where(c => c.Template is { } template && template.IsBasicResource())
+			.Take(40)
+			.ToList();
+
+		var championId = HexGame::Singleton<TemplateManager>.Instance.Champions.GetKeys().FirstOrDefault();
+
+		return new deck_bits
+		{
+			Id = 0,
+			player_id = profileId,
+			PVPChampionId = championId,
+			CardsInDeck = shards,
+			CardsInSideboard = new List<card_instance_bits>()
+		};
 	}
 
 	private void SendTo(string username, object message)

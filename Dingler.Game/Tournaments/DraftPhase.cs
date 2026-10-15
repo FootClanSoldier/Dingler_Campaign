@@ -4,6 +4,8 @@ using Dingler.Game.Draft;
 using Dingler.Server;
 using HexGame::Game.Shared.Domain;
 using HexGame::Game.Shared.Network.Tournaments;
+using HexGame::Game.Shared.Tournaments;
+using HexGame::Game.Shared.TournamentSystemMkII;
 using DraftCollectionEntity = Dingler.Data.Entities.GameData.DraftCollection;
 
 namespace Dingler.Game.Tournaments;
@@ -41,6 +43,8 @@ public sealed class DraftPhase : ITournamentPhase
 		var players = info.Players.ToList();
 		if (players.Count == 0)
 			return;
+
+		await tournament.SetAllPlayersAsync(ETournamentPlayerStatus.Drafting, PlayerStates.Drafting);
 
 		var packGenerator = new PackGenerator();
 

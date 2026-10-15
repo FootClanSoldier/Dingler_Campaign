@@ -53,17 +53,20 @@ public sealed class GameManager : IDisposable
 		var wrapper = new HexGameWrapper(engine, new CardVisibilityManager(), _sessionManager, gameCts.Token,
 			_loggerFactory?.CreateLogger<HexGameWrapper>(), CleanupMatch);
 
-		wrapper.TryAddPlayer(new TrackedPlayer(new PlayerState
+		var player1 = new TrackedPlayer(new PlayerState
 		{
 			PlayerId = pairing.Player1.PlayerUID,
 			PlayerPosition = 0
-		}, UID.Invalid));
+		}, UID.Invalid);
 
-		wrapper.TryAddPlayer(new TrackedPlayer(new PlayerState
+		var player2 = new TrackedPlayer(new PlayerState
 		{
 			PlayerId = pairing.Player2.PlayerUID,
 			PlayerPosition = 1
-		}, UID.Invalid));
+		}, UID.Invalid);
+
+		wrapper.TryAddPlayer(player1);
+		wrapper.TryAddPlayer(player2);
 
 		try
 		{
@@ -77,6 +80,8 @@ public sealed class GameManager : IDisposable
 			throw;
 		}
 
+		AttachDraftBots(engine, pairing, player1, player2);
+
 		_runningMatches[assignedId] = wrapper;
 		_gamePlayerIsIn[pairing.Player1.Name] = wrapper;
 		_gamePlayerIsIn[pairing.Player2.Name] = wrapper;
@@ -85,6 +90,28 @@ public sealed class GameManager : IDisposable
 			assignedId, tournamentId, pairing.Player1.Name, pairing.Player2.Name);
 
 		return wrapper;
+	}
+
+	private static void AttachDraftBots(HexRulesEngine engine, TournamentPairing pairing,
+		TrackedPlayer player1, TrackedPlayer player2)
+	{
+		var player1IsBot = DraftBots.IsBot(pairing.Player1.Name);
+		var player2IsBot = DraftBots.IsBot(pairing.Player2.Name);
+
+		if (!player1IsBot && !player2IsBot)
+			return;
+
+		if (player1IsBot && player2IsBot)
+		{
+			// Bot vs bot: Player1 is the designated winner, Player2 concedes. No human will kick the pump, so do it here.
+			_ = new TournamentBotSeat(engine, player1, concede: false);
+			_ = new TournamentBotSeat(engine, player2, concede: true);
+			engine.ProcessWork();
+			return;
+		}
+
+		// Bot vs human: the bot concedes on its first priority.
+		_ = new TournamentBotSeat(engine, player1IsBot ? player1 : player2, concede: true);
 	}
 
 	public HexGameWrapper CreateGameSession(ulong tournamentId, TournamentPairing pairing,

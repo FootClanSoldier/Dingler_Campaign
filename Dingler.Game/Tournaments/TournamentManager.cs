@@ -65,7 +65,6 @@ public class TournamentManager : IAsyncStartupService
 		var tournaments = await _tournamentRepository.GetTournamentsAsync(token);
 
 		var descriptionList = new List<TournamentDesc>();
-		// StartConditionId 1 = on-demand waiting room (re-runnable); StartConditionId 2 = scheduled tournament.
 		var waitingRooms = tournaments.Where(t => t.StartConditionId == 1).ToList();
 		var scheduledTournaments = tournaments.Where(t => t.StartConditionId == 2).ToList();
 
@@ -76,7 +75,7 @@ public class TournamentManager : IAsyncStartupService
 			var gameSettings = CreateGameSettings(waitingRoomDto);
 			var waitingRoom = new WaitingRoom(this, tournamentSettings, gameSettings);
 			_waitingRooms.TryAdd(waitingRoomId, waitingRoom);
-			descriptionList.Add(new TournamentDesc(waitingRoomId, tournamentSettings.MinPlayers,
+			descriptionList.Add(new TournamentDesc(waitingRoomId, tournamentSettings.MinPlayers, 
 				tournamentSettings.MaxPlayers, tournamentSettings.Description, Array.Empty<string>(), 0, 0, 0)
 			{
 				TournamentState = TournamentState.WaitForStart,
@@ -146,7 +145,9 @@ public class TournamentManager : IAsyncStartupService
 	{
 		var sessionManager = _serviceProvider.GetRequiredService<SessionManager>();
 		var gameManager = _serviceProvider.GetRequiredService<GameManager>();
-		var assignedId = Interlocked.Increment(ref _virtualTournamentId);
+		var assignedId = tournamentSettings.MaxPlayers == 2
+			? Interlocked.Increment(ref _virtualTournamentId)
+			: Interlocked.Increment(ref _currentTournamentId);
 		var rules = CreateRules(tournamentSettings, gameSettings);
 		var cancellationManager = _serviceProvider.GetRequiredService<ICancellationManager>();
 		var cts = cancellationManager.CreateLinkedSource();
@@ -165,8 +166,8 @@ public class TournamentManager : IAsyncStartupService
 	
 	private static ETournamentFormats GetFormat(int tournamentTypeId) => tournamentTypeId switch
 	{
-		1 => ETournamentFormats.Booster_Draft,
-		2 => ETournamentFormats.Sealed_Deck,
+		1 => ETournamentFormats.Booster_Draft | ETournamentFormats.Immortal,
+		2 => ETournamentFormats.Sealed_Deck | ETournamentFormats.Immortal,
 		4 => ETournamentFormats.Immortal,
 		_ => ETournamentFormats.Constructed,
 	};
@@ -182,7 +183,7 @@ public class TournamentManager : IAsyncStartupService
 				3 or 4 => ETournamentFormats.Chapter2,
 				5 or 6 => ETournamentFormats.Chapter3,
 				7 or 8 => ETournamentFormats.Chapter4,
-				9 or 10 => ETournamentFormats.Chapter5,
+				9 => ETournamentFormats.Chapter5,
 				_ => ETournamentFormats.Constructed,
 			};
 		}
@@ -203,7 +204,6 @@ public class TournamentManager : IAsyncStartupService
 			.Select(ds => ds.CardSetId)
 			.ToList() ?? new List<int>();
 
-		// Restrict legal cards/champions to the sets in the draft pool (e.g. set 1-2-2 -> Chapter1 = sets 1+2).
 		format |= GetSetFormatFlags(draftSetIds);
 
 		return new TournamentSettings(DateTime.Now.Ticks, tournament.NeededPlayers, tournament.NeededPlayers,

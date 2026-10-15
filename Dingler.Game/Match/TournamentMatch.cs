@@ -31,6 +31,8 @@ public class TournamentMatch
 	public event Action<TournamentMatch, string>? PlayerLeftToSideboard;
 	public event Action<TournamentMatch, string>? PlayerLeftToMainLobby;
 	public event Action<TournamentMatch, string>? PlayerForfeited;
+	public event Action<TournamentMatch, UID>? GameCompleted;
+	public event Action<TournamentMatch, MatchPhase>? PhaseChanged;
 	
 
 	public TournamentMatch(ulong id, GameManager gameManager, GameSettings gameSettings,
@@ -96,12 +98,14 @@ public class TournamentMatch
 				Phase = MatchPhase.PlayingGame;
 				_readyPlayers.Clear();
 			}
+			PhaseChanged?.Invoke(this, MatchPhase.PlayingGame);
 			
 			GameStarted?.Invoke(this, game);
 			var result = await game.RunGameAsync(forcedFirstPlayer);
 			NextGameTime = DateTime.UtcNow.AddMinutes(2);
 			GameEnded?.Invoke(this, game);
 			winners.Add(result.Item1);
+			GameCompleted?.Invoke(this, result.Item1);
 
 			if (winners.Count == 3 || (winners.Count == 2 && winners[0] == winners[1]))
 				IsMatchDecided = true;
@@ -115,6 +119,10 @@ public class TournamentMatch
 				{
 					Phase = MatchPhase.Sideboard;
 				}
+				PhaseChanged?.Invoke(this, MatchPhase.Sideboard);
+
+				SubmitBotSideboards();
+
 				await Task.WhenAny(_tcs.Task, Task.Delay(TimeSpan.FromMinutes(1), token));
 				forcedFirstPlayer = result.Item2;
 			}
@@ -123,6 +131,7 @@ public class TournamentMatch
 		}
 
 		Phase = MatchPhase.Complete;
+		PhaseChanged?.Invoke(this, MatchPhase.Complete);
 		MatchEnded?.Invoke(this);
 		return winners;
 	}
@@ -145,6 +154,19 @@ public class TournamentMatch
 				return;
 			
 			_tcs.TrySetResult();
+		}
+	}
+
+	// Bots never open the sideboard screen; auto-submit their existing deck so a game 2 can start immediately.
+	private void SubmitBotSideboards()
+	{
+		foreach (var player in GetPlayersInMatch())
+		{
+			if (!DraftBots.IsBot(player))
+				continue;
+
+			if (TournamentPairing.Decks.TryGetValue(player, out var deck))
+				DeckSubmitted(player, deck);
 		}
 	}
 

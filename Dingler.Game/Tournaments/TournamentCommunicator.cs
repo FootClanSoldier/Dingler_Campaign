@@ -34,6 +34,7 @@ public sealed class TournamentCommunicator : IDisposable
 		tournament.SendPlayerToSideboard += OnSendPlayerToSideboard;
 		tournament.PlayerRequestsFullUpdate += OnPlayerRequestsFullUpdate;
 		tournament.PlayerForfeits += OnPlayerForfeits;
+		tournament.StateChanged += OnStateChanged;
 	}
 
 	public void UnregisterTournamentMethods(Tournament tournament)
@@ -52,6 +53,7 @@ public sealed class TournamentCommunicator : IDisposable
 		tournament.SendPlayerToSideboard -= OnSendPlayerToSideboard;
 		tournament.PlayerRequestsFullUpdate -= OnPlayerRequestsFullUpdate;
 		tournament.PlayerForfeits -= OnPlayerForfeits;
+		tournament.StateChanged -= OnStateChanged;
 	}
 	
 	private void OnPlayerRegistered(Tournament tournament, TournamentRoomState state, string playerUsername)
@@ -110,7 +112,7 @@ public sealed class TournamentCommunicator : IDisposable
 
 	private void OnRoundStart(Tournament tournament, TournamentRoomState state, int roundId)
 	{
-		
+		BroadcastRoomUpdate(tournament, state);
 	}
 
 	private void OnRoundEnd(Tournament tournament, TournamentRoomState state, int roundId)
@@ -145,7 +147,43 @@ public sealed class TournamentCommunicator : IDisposable
 
 	private void OnPairings(Tournament tournament, TournamentRoomState state, List<TournamentPairing> pairings)
 	{
-		
+		BroadcastRoomUpdate(tournament, state);
+	}
+
+	private void OnStateChanged(Tournament tournament, TournamentRoomState state)
+	{
+		BroadcastRoomUpdate(tournament, state);
+	}
+
+	private void BroadcastRoomUpdate(Tournament tournament, TournamentRoomState state)
+	{
+		var info = state.TournamentInfo;
+
+		var playersDelta = new Dictionary<string, TournamentPlayerInfo>();
+		for (var i = 0; i < info.Players.Count; i++)
+		{
+			info.Players[i].PlayerID = (ulong)(i + 1);
+			playersDelta[(i + 1).ToString()] = info.Players[i];
+		}
+
+		var matchesDelta = new Dictionary<string, TournamentGameInfo>();
+		for (var i = 0; i < info.Games.Count; i++)
+			matchesDelta[i.ToString()] = info.Games[i];
+
+		// Partial updates (not full): the client ignores full updates once it has caught up on a room.
+		var updates = new List<RoomUpdate>
+		{
+			new(++state.VersionNumber, UpdateType.Partial, $"/tourn:tournament-{tournament.Id}/players", playersDelta),
+			new(++state.VersionNumber, UpdateType.Partial, $"/tourn:tournament-{tournament.Id}/matches", matchesDelta),
+		};
+
+		var roomData = new RoomData($"tourn:tournament-{tournament.Id}", "SERVER", updates);
+
+		foreach (var player in info.Players)
+		{
+			if (_sessionManager.TryGetUserSession(player.Name, out var context))
+				context.TrySendMessageToClient(roomData);
+		}
 	}
 
 	private void OnTournamentComplete(Tournament tournament, TournamentRoomState roomState)
@@ -160,7 +198,7 @@ public sealed class TournamentCommunicator : IDisposable
 		{
 			state.DeckInfo.TryGetValue(player, out var deck);
 			if (!_sessionManager.TryGetUserSession(player, out var context))
-				return;
+				continue;
 				
 			context.TrySendMessageToClient(new TournamentPlayerJoinedEventArgs(tournament.Id, false, deck, null));
 			
