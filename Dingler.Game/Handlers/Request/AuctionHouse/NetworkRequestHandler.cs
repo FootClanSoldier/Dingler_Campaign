@@ -127,7 +127,7 @@ public sealed class NetworkRequestHandler : IRequestHandler<Network.Request, Net
             throw new InvalidDataException("invalid profile deck ID");
 
         var saved = _store.SaveProfileDeck(context.ProfileId, existingId,
-            template.Champ.ToString(), template.Name, bytes, context.CurrentCampaignChampionId);
+            template.Champ.ToString(), template.Name, bytes);
         var native = new SavedProfileDeckTemplate
         {
             Id = saved.Id,

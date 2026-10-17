@@ -69,8 +69,8 @@ public sealed class CampaignService
         return JsonSerializer.SerializeToUtf8Bytes(response);
     }
 
-    // Profile-deck saves do not carry a champion ID. Remember the last authenticated
-    // campaign character selected by the client so shared templates are not overwritten.
+    // Track the last authenticated campaign character for request context.
+    // Profile-deck saves do not carry a champion ID; this hint does not determine deck ownership.
     private void TrackDeckEditingChampion(SessionContext context, JsonElement root, string requestType)
     {
         if (requestType is "qcur4champ" or "getactive" or "createcamp")

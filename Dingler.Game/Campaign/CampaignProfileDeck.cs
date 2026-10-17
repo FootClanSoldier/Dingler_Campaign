@@ -36,7 +36,7 @@ public sealed partial class CampaignRunStore
     }
 
     public CampaignProfileDeck SaveProfileDeck(ulong profileId, ulong existingId,
-        string championTemplateGuid, string name, byte[] data, ulong editingChampionId = 0)
+        string championTemplateGuid, string name, byte[] data)
     {
         if (profileId == 0 || data.Length is 0 or > 131072 || string.IsNullOrWhiteSpace(name))
             throw new InvalidDataException("Invalid profile deck template");
@@ -50,10 +50,10 @@ public sealed partial class CampaignRunStore
                     ?? throw new InvalidOperationException("Profile deck does not belong to the player");
                 if (!string.Equals(record.ChampionTemplateGuid, championTemplateGuid, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("Cannot change the owner of a profile deck template");
-                if (IsProfileDeckAssignedElsewhereLocked(profileId, existingId, editingChampionId))
+                if (IsProfileDeckSharedLocked(profileId, existingId))
                 {
-                    // Shared profile templates are copied on edit. The native save reply
-                    // lets the client bind the new ID to its current champion's party.
+                    // A template used by multiple champions must be copied before edit.
+                    // The native save reply binds the new ID to the edited party.
                     record = null;
                 }
             }
@@ -150,11 +150,18 @@ public sealed partial class CampaignRunStore
         return next;
     }
 
-    private bool IsProfileDeckAssignedElsewhereLocked(ulong profileId, ulong deckId, ulong editingChampionId)
+    private bool IsProfileDeckSharedLocked(ulong profileId, ulong deckId)
     {
-        return EnumerateCreatedLocked(profileId).Any(champion =>
-            (editingChampionId == 0 || champion.ChampionId != editingChampionId)
-            && champion.PartyMembers.Any(member => member.DeckTemplateId == deckId));
+        var referencedByChampion = false;
+        foreach (var champion in EnumerateCreatedLocked(profileId))
+        {
+            if (!champion.PartyMembers.Any(member => member.DeckTemplateId == deckId))
+                continue;
+            if (referencedByChampion)
+                return true;
+            referencedByChampion = true;
+        }
+        return false;
     }
 
     private List<CampaignProfileDeck> ReadProfileDecksLocked(ulong profileId)
