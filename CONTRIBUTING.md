@@ -7,4 +7,4 @@
   - Structural changes
      - The original engine has no way to check time remaining in a game without constant polling. Patches were used to allow it to run off of a Timer that would raise an event when someone ran out
   - Avoiding Unity Landmines
-    - Some feautures only work under unity. For example, the card Pippit Hustler calls Unity specific code and will crash the server. We use a patch to avoid those calls.
+    - Some features only work under unity. For example, the card Pippit Hustler calls Unity specific code and will crash the server. We use a patch to avoid those calls.
