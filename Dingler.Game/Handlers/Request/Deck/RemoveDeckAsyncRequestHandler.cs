@@ -5,6 +5,7 @@ using Dingler.Server.Attributes;
 using Dingler.Game.Services;
 using HexGame::Game.Client.Network.Profile;
 using HexGame::Game.Shared.Network.Profile;
+using Microsoft.Extensions.Logging;
 
 namespace Dingler.Game.Handlers.Request.Deck;
 
@@ -12,10 +13,12 @@ namespace Dingler.Game.Handlers.Request.Deck;
 public sealed class RemoveDeckAsyncRequestHandler : IAsyncRequestHandler<RemoveDeckRequestArgs, RemoveDeckResponse>
 {
 	private readonly DeckService _deckService;
+	private readonly ILogger<RemoveDeckAsyncRequestHandler> _logger;
 
-	public RemoveDeckAsyncRequestHandler(DeckService deckService)
+	public RemoveDeckAsyncRequestHandler(DeckService deckService, ILogger<RemoveDeckAsyncRequestHandler> logger)
 	{
 		_deckService = deckService;
+		_logger = logger;
 	}
 
 	public async Task<RemoveDeckResponse> HandleRequestAsync(SessionContext context, RemoveDeckRequestArgs request,
@@ -26,8 +29,9 @@ public sealed class RemoveDeckAsyncRequestHandler : IAsyncRequestHandler<RemoveD
 		{
 			return await _deckService.RemoveDeckAsync(context, request);
 		}
-		catch (Exception)
+		catch (Exception ex)
 		{
+			_logger.LogError(ex, "Could not remove deck {deckId} for user {username}", request.DeckID, context.UserName!);
 			return new RemoveDeckResponse()
 			{
 				DeckID = request.DeckID,

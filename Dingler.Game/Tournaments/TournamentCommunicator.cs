@@ -35,6 +35,7 @@ public sealed class TournamentCommunicator : IDisposable
 		tournament.PlayerRequestsFullUpdate += OnPlayerRequestsFullUpdate;
 		tournament.PlayerForfeits += OnPlayerForfeits;
 		tournament.StateChanged += OnStateChanged;
+		tournament.SendPlayerToMainLobby += OnSendPlayerToMainLobby;
 	}
 
 	public void UnregisterTournamentMethods(Tournament tournament)
@@ -54,6 +55,20 @@ public sealed class TournamentCommunicator : IDisposable
 		tournament.PlayerRequestsFullUpdate -= OnPlayerRequestsFullUpdate;
 		tournament.PlayerForfeits -= OnPlayerForfeits;
 		tournament.StateChanged -= OnStateChanged;
+		tournament.SendPlayerToMainLobby -= OnSendPlayerToMainLobby;
+	}
+
+	private void OnSendPlayerToMainLobby(Tournament tournament, TournamentRoomState state, string username)
+	{
+		if (!_sessionManager.TryGetUserSession(username, out var context))
+			return;
+
+		context.TrySendMessageToClient(new GotoLobbyEventArgs(tournament.Id));
+	}
+	
+	private void OnPlayerBye(Tournament tournament, TournamentRoomState state, TournamentPlayerInfo playerInfo)
+	{
+		
 	}
 	
 	private void OnPlayerRegistered(Tournament tournament, TournamentRoomState state, string playerUsername)
@@ -63,7 +78,7 @@ public sealed class TournamentCommunicator : IDisposable
 
 	private void OnPlayerDeRegistered(Tournament tournament, TournamentRoomState state, string playerUsername)
 	{
-		
+		BroadcastRoomUpdate(tournament, state);
 	}
 
 	private void OnPlayerJoined(Tournament tournament, TournamentRoomState state, string username, bool isWaitingRoom)
@@ -147,6 +162,16 @@ public sealed class TournamentCommunicator : IDisposable
 
 	private void OnPairings(Tournament tournament, TournamentRoomState state, List<TournamentPairing> pairings)
 	{
+		foreach (var pairing in pairings)
+		{
+			if (!pairing.Bye) 
+				continue;
+			
+			if (!_sessionManager.TryGetUserSession(pairing.Player1.Name, out var session))
+				continue;
+
+			session.TrySendMessageToClient(new TournamentByeReceivedEventArgs());
+		}
 		BroadcastRoomUpdate(tournament, state);
 	}
 

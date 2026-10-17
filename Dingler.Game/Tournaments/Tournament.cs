@@ -21,6 +21,7 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 	public ulong Id { get; }
 	public bool IsRunning { get; init; }
 
+	public event Action<Tournament, TournamentRoomState, TournamentPlayerInfo>? PlayerBye;
 	public event Action<Tournament, TournamentRoomState, string>? PlayerRegistered;
 	public event Action<Tournament, TournamentRoomState, string>? PlayerDeregistered;
 	public event Action<Tournament, TournamentRoomState, string, bool>? PlayerRequestsFullUpdate;
@@ -153,11 +154,6 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 	{
 		return _actor.ScheduleWork(state =>
 		{
-			if (!state.TournamentInfo.State.In(TournamentState.WaitForStart))
-			{
-				return RegistrationResult.Fail("Tournament has already started");
-			}
-			
 			var players = state.TournamentInfo.Players;
 			if (!players.Any(p => p.Name.Equals(username)))
 				return RegistrationResult.Fail("Player is not registered to tournament");
@@ -230,14 +226,11 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 		return (int)Math.Ceiling(Math.Log(playerCount, 2.0));
 	}
 
-	// The pairing/game/elimination loop, run by the GamePhase. Lives here because it owns the actor and match
-	// manager and raises the tournament events.
 	internal async Task RunGamePhaseAsync(CancellationToken token)
 	{
 		var numberOfRounds = await _actor.ScheduleWork(state => state.TournamentInfo.NumberOfRounds);
 		Dictionary<string, HashSet<string>> previousOpponents = new();
 
-		// Round 1: pairings and games start immediately (no pre-round pause).
 		var roundMatches = await GeneratePairingsAsync(previousOpponents);
 		var games = await StartRoundGamesAsync(roundMatches, 1);
 		await Task.WhenAll(games);
@@ -245,7 +238,6 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 
 		for (int i = 2; i <= numberOfRounds; i++)
 		{
-			// Pair immediately and broadcast the new pairings, then pause to review standings, then start games.
 			roundMatches = await GeneratePairingsAsync(previousOpponents);
 			await Task.Delay(TimeSpan.FromSeconds(30), token);
 
@@ -257,7 +249,6 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 
 	private sealed record RoundMatch(TournamentPairing Pairing, TournamentGameInfo? GameInfo);
 
-	// Computes final standings after the last round: tiebreakers (OMWR, OOMWR, GWR) and ranks.
 	private Task UpdateStandingsAsync(Dictionary<string, HashSet<string>> previousOpponents)
 	{
 		return _actor.ScheduleWork(state =>
@@ -269,7 +260,6 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 
 			var byName = players.ToDictionary(p => p.Name);
 
-			// OMWR: average of each opponent's match win rate (byes are already excluded from previousOpponents).
 			foreach (var p in players)
 			{
 				if (!previousOpponents.TryGetValue(p.Name, out var opponents) || opponents.Count == 0)
@@ -281,7 +271,6 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 				p.OMWR = opponents.Average(o => MatchWinRate(byName[o]));
 			}
 
-			// OOMWR: average of each opponent's OMWR.
 			foreach (var p in players)
 			{
 				if (!previousOpponents.TryGetValue(p.Name, out var opponents) || opponents.Count == 0)
@@ -293,7 +282,6 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 				p.OOMWR = opponents.Average(o => byName[o].OMWR);
 			}
 
-			// GWR: game wins / games played, derived from the recorded per-game winners.
 			var gameWins = new Dictionary<string, int>();
 			var gamesPlayed = new Dictionary<string, int>();
 			foreach (var game in state.TournamentInfo.Games)
@@ -369,6 +357,7 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 					pairing.Player1.Wins++;
 					pairing.Player1.Points += PointsPerMatchWin;
 					roundMatches.Add(new RoundMatch(pairing, null));
+					PlayerBye?.Invoke(this, state, pairing.Player1);
 					continue;
 				}
 
@@ -392,7 +381,6 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 				roundMatches.Add(new RoundMatch(pairing, gameInfo));
 			}
 
-			// Broadcast the pairings (including the newly-created matches) immediately, before the pause.
 			Pairings?.Invoke(this, state, pairings);
 
 			return roundMatches;
@@ -433,8 +421,6 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 			StateChanged?.Invoke(this, state);
 		});
 
-		// Record per-game winners and keep player status/state in sync with the match phase as it progresses. Each
-		// change is queued to the actor (serialized + broadcast) and awaited before the standings update below.
 		var pendingUpdates = new List<Task>();
 		var gamesCompleted = 0;
 
@@ -642,6 +628,27 @@ public sealed class Tournament : IRegisterable, IJoinable, IDisposable
 		PlayerForfeits?.Invoke(match, username);
 
 		return true;
+	}
+
+	public Task DropFromDeckBuildingAsync(string username)
+	{
+		return _actor.ScheduleWork(state =>
+		{
+			for (int i = state.TournamentInfo.Players.Count - 1; i >= 0; i--)
+			{
+				if (string.Equals(state.TournamentInfo.Players[i].Name, username,
+					    StringComparison.CurrentCultureIgnoreCase))
+				{
+					state.TournamentInfo.Players.RemoveAt(i);
+					break;
+				}
+			}
+
+			state.DeckInfo.Remove(username, out _);
+			state.BaseDeckInfo.Remove(username, out _);
+			PlayerDeregistered?.Invoke(this, state, username);
+			SendPlayerToMainLobby?.Invoke(this, state, username);
+		});
 	}
 	
 }

@@ -8,6 +8,7 @@ using HexGame::Game.Shared.Network.Profile;
 using System.Text.Json;
 using Dingler.Server;
 using Dingler.Data.Repositories;
+using Dingler.Game.Arena;
 using HexGame::Reckoning.Game;
 using Dingler.Game.Domain;
 using Dingler.Game.Campaign;
@@ -15,18 +16,18 @@ using Deck = Dingler.Data.Entities.GameData.Deck;
 
 namespace Dingler.Game.Services
 {
-                    public sealed class DeckService
+    public sealed class DeckService
     {
         private readonly DeckRepository _deckRepository;
         private readonly CollectionCacheService _collectionService;
-        private readonly Dingler.Game.Arena.ArenaRunStore _arenaRunStore;
+        private readonly ArenaRunStore _arenaRunStore;
         private readonly CampaignRunStore _campaignRunStore;
 
         // Contains "locked": the client then shows its own "deck is locked" message.
         private const string ArenaLockedMessage = "This deck is locked to the Frost Ring Arena until the run ends.";
 
         public DeckService(DeckRepository deckRepository, CollectionCacheService collectionService,
-            Dingler.Game.Arena.ArenaRunStore arenaRunStore, CampaignRunStore campaignRunStore)
+            ArenaRunStore arenaRunStore, CampaignRunStore campaignRunStore)
         {
             _deckRepository = deckRepository;
             _collectionService = collectionService;

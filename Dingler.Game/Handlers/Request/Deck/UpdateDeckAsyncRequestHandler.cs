@@ -5,6 +5,8 @@ using Dingler.Server.Attributes;
 using Dingler.Game.Services;
 using HexGame::Game.Client.Network.Profile;
 using HexGame::Game.Shared.Network.Profile;
+using HexGame::GPG.Core;
+using Microsoft.Extensions.Logging;
 
 namespace Dingler.Game.Handlers.Request.Deck;
 
@@ -12,10 +14,12 @@ namespace Dingler.Game.Handlers.Request.Deck;
 public sealed class UpdateDeckAsyncRequestHandler : IAsyncRequestHandler<UpdateDeckRequestArgs, UpdateDeckResponse>
 {
 	private readonly DeckService _deckService;
+	private readonly ILogger<UpdateDeckAsyncRequestHandler> _logger;
 
-	public UpdateDeckAsyncRequestHandler(DeckService deckService)
+	public UpdateDeckAsyncRequestHandler(DeckService deckService, ILogger<UpdateDeckAsyncRequestHandler> logger)
 	{
 		_deckService = deckService;
+		_logger = logger;
 	}
 
 	public async Task<UpdateDeckResponse> HandleRequestAsync(SessionContext context, UpdateDeckRequestArgs request,
@@ -25,8 +29,9 @@ public sealed class UpdateDeckAsyncRequestHandler : IAsyncRequestHandler<UpdateD
 		{
 			return await _deckService.UpdateDeckAsync(context, request);
 		}
-		catch (Exception)
+		catch (Exception ex)
 		{
+			_logger.LogError(ex, "Could not update deck {deckId} for user {username}", request.DeckID, context.UserName!);
 			return new UpdateDeckResponse()
 			{
 				DeckID = request.DeckID,

@@ -13,7 +13,7 @@ namespace Dingler.Game.Tournaments;
 
 public sealed class DeckBuildingPhase : ITournamentPhase
 {
-	private const int DefaultDeckBuildSeconds = 600;
+	private const int DefaultDeckBuildSeconds = 10;
 
 	private readonly SessionManager _sessionManager;
 	private readonly DraftCollectionRepository _repository;
@@ -82,8 +82,8 @@ public sealed class DeckBuildingPhase : ITournamentPhase
 			}
 			else
 			{
-				finalDeck = await tournament.ScheduleWork(state =>
-					state.DeckInfo.TryGetValue(player.Name, out var deck) ? deck : new deck_bits());
+				await tournament.DropFromDeckBuildingAsync(player.Name);
+				continue;
 			}
 
 			await tournament.ScheduleWork(state =>
